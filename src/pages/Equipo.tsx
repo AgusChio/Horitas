@@ -48,8 +48,20 @@ export function Equipo({
   const updateMember = useMutation(api.team.updateMember);
   const updateSettings = useMutation(api.team.updateSettings);
   const [hoursPerDay, setHoursPerDay] = useState(String(settings?.hoursPerDay ?? 8));
-  const [domains, setDomains] = useState(settings?.allowedDomains.join(", ") ?? "");
+  const [domains, setDomains] = useState(settings?.allowedDomains ?? []);
+  const [draft, setDraft] = useState("");
   const [allowAny, setAllowAny] = useState(settings?.allowAnyDomain ?? false);
+
+  function addDomain() {
+    const next = draft.trim().toLowerCase().replace(/^@/, "");
+    if (!next) return;
+    if (!/^[a-z0-9.-]+\.[a-z]{2,}$/.test(next)) {
+      onError("Ese dominio no es válido. Usá algo como empresa.com, sin el @.");
+      return;
+    }
+    setDomains((current) => (current.includes(next) ? current : [...current, next]));
+    setDraft("");
+  }
 
   return (
     <section className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_22rem]">
@@ -92,9 +104,15 @@ export function Equipo({
         onSubmit={(event) => {
           event.preventDefault();
           if (!isAdmin) return;
+          const pending = draft.trim().toLowerCase().replace(/^@/, "");
+          const allowedDomains = pending && !domains.includes(pending) ? [...domains, pending] : domains;
+          if (pending && !/^[a-z0-9.-]+\.[a-z]{2,}$/.test(pending)) {
+            onError("Ese dominio no es válido. Usá algo como empresa.com, sin el @.");
+            return;
+          }
           void updateSettings({
             hoursPerDay: Number(hoursPerDay),
-            allowedDomains: domains.split(/[\s,;]+/).filter(Boolean),
+            allowedDomains,
             allowAnyDomain: allowAny,
           })
             .then(() => onToast("La configuración quedó guardada."))
@@ -115,15 +133,45 @@ export function Equipo({
         </Field>
         <Field
           label="Dominios corporativos"
-          hint="Separalos con coma. Ejemplo: accenture.com. Quien ya tiene cuenta sigue entrando."
+          hint="Podés agregar varios. Quien se registre con uno de estos mails entra al equipo. Quien ya tiene cuenta sigue entrando."
         >
-          <TextInput
-            value={domains}
-            disabled={!isAdmin}
-            onChange={(event) => setDomains(event.target.value)}
-            placeholder="accenture.com"
-          />
+          <div className="flex gap-2">
+            <TextInput
+              value={draft}
+              disabled={!isAdmin}
+              onChange={(event) => setDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key !== "Enter") return;
+                event.preventDefault();
+                addDomain();
+              }}
+              placeholder="empresa.com"
+              aria-label="Nuevo dominio"
+            />
+            <Button type="button" variant="ghost" disabled={!isAdmin || draft.trim() === ""} onClick={addDomain}>
+              Agregar
+            </Button>
+          </div>
         </Field>
+        {domains.length > 0 && (
+          <ul className="flex flex-wrap gap-2">
+            {domains.map((domain) => (
+              <li key={domain} className="flex items-center gap-2 rounded-full border border-line bg-paper px-3 py-1 text-sm">
+                <span>{domain}</span>
+                {isAdmin && (
+                  <button
+                    type="button"
+                    className="text-base leading-none text-ink-soft"
+                    aria-label={`Quitar ${domain}`}
+                    onClick={() => setDomains((current) => current.filter((item) => item !== domain))}
+                  >
+                    ×
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
         <label className="flex items-start gap-2 text-sm">
           <input
             type="checkbox"
