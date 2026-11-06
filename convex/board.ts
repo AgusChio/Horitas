@@ -20,7 +20,7 @@ import {
   weeksOfMonth,
   type RangeGroup,
 } from "./dates";
-import { TIPO_ORDER, type Country, type Tipo } from "./domain";
+import { closedBeforeMonth, TIPO_ORDER, type Country, type Tipo } from "./domain";
 import { assertPeriod, displayName, getSettings, getUser } from "./lib";
 
 function round2(value: number) {
@@ -154,7 +154,7 @@ export const get = query({
     });
     const weeks = weeksOfMonth(args.year, args.month);
     const items = data.items
-      .filter((item) => item.userId === person._id)
+      .filter((item) => item.userId === person._id && !closedBeforeMonth(item.endedOn, item.year, item.month))
       .sort(
         (a, b) =>
           TIPO_ORDER.indexOf(a.tipo) - TIPO_ORDER.indexOf(b.tipo) ||
@@ -203,6 +203,10 @@ export const get = query({
         deployDate: item.deployDate,
         environment: item.environment,
         notes: item.notes,
+        endedOn: item.endedOn ?? null,
+        relatedKind: item.relatedKind ?? null,
+        relatedTicket: item.relatedTicket ?? null,
+        outcome: item.outcome ?? null,
         hours: hours.map(round2),
         extras: extras.map(round2),
         weeks: weekHours.map(round2),
@@ -283,11 +287,16 @@ async function buildTeamMonth(ctx: QueryCtx, year: number, month: number) {
           holidays: maps[country],
           absences,
         });
+        const hidden = new Set(
+          data.items
+            .filter((item) => closedBeforeMonth(item.endedOn, item.year, item.month))
+            .map((item) => item._id),
+        );
         const weekHours = emptyWeeks(weeks.length);
         let regular = 0;
         let extra = 0;
         for (const entry of data.entries) {
-          if (entry.userId !== person._id) continue;
+          if (entry.userId !== person._id || hidden.has(entry.itemId)) continue;
           const day = Number(entry.date.slice(8, 10));
           const overtime = entry.extraHours ?? 0;
           weekHours[weekNumber(year, month, day) - 1] += entry.hours + overtime;
@@ -310,7 +319,8 @@ async function buildTeamMonth(ctx: QueryCtx, year: number, month: number) {
       })
       .sort((a, b) => a.name.localeCompare(b.name, "es"));
 
-    const itemName = new Map(data.items.map((item) => [item._id, item]));
+    const visibleItems = data.items.filter((item) => !closedBeforeMonth(item.endedOn, item.year, item.month));
+    const itemName = new Map(visibleItems.map((item) => [item._id, item]));
     const grouped = new Map<
       string,
       {
@@ -325,7 +335,7 @@ async function buildTeamMonth(ctx: QueryCtx, year: number, month: number) {
       }
     >();
 
-    for (const item of data.items) {
+    for (const item of visibleItems) {
       const owner = people.find((person) => person._id === item.userId);
       if (!owner) continue;
       grouped.set(item._id, {
@@ -500,6 +510,8 @@ async function buildTeamRange(ctx: QueryCtx, start: string, end: string, group: 
       ),
     )
   ).flat();
+  const visibleItems = items.filter((item) => !closedBeforeMonth(item.endedOn, item.year, item.month));
+  const hidden = new Set(items.filter((item) => !visibleItems.includes(item)).map((item) => item._id));
   const buckets = rangeBuckets(start, end, group);
   const bucketDates = buckets.map((bucket) => new Set(bucket.dates));
   const hoursPerDay = settings?.hoursPerDay ?? 8;
@@ -530,7 +542,7 @@ async function buildTeamRange(ctx: QueryCtx, start: string, end: string, group: 
       let regular = 0;
       let extra = 0;
       for (const entry of entries) {
-        if (entry.userId !== person._id || !dateSet.has(entry.date)) continue;
+        if (entry.userId !== person._id || !dateSet.has(entry.date) || hidden.has(entry.itemId)) continue;
         const overtime = entry.extraHours ?? 0;
         const index = bucketDates.findIndex((set) => set.has(entry.date));
         if (index >= 0) bucketHours[index] += entry.hours + overtime;
@@ -579,7 +591,7 @@ async function buildTeamRange(ctx: QueryCtx, start: string, end: string, group: 
   >();
   for (const entry of entries) {
     if (!dateSet.has(entry.date)) continue;
-    const item = items.find((candidate) => candidate._id === entry.itemId);
+    const item = visibleItems.find((candidate) => candidate._id === entry.itemId);
     const owner = people.find((person) => person._id === entry.userId);
     if (!item || !owner) continue;
     const key = `${item.userId}|${item.tipo}|${item.name}|${item.ticket ?? ""}`;

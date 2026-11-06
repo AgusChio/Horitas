@@ -92,8 +92,9 @@ export function Graficos({
     if (!report || visibleExecuted <= 0) return;
     setExporting(true);
     try {
-      if (kind === "excel") await downloadExcel(report, period, personId);
-      else await downloadWord(report, period, personId);
+      const bucketTitle = group === "dia" ? "Día a día" : group === "mes" ? "Mes a mes" : "Semana a semana";
+      if (kind === "excel") await downloadExcel(report, period, personId, mode, bucketTitle);
+      else await downloadWord(report, period, personId, mode, bucketTitle);
       onToast(kind === "excel" ? "Excel descargado." : "Word descargado.");
     } catch (error) {
       onError(errorMessage(error));

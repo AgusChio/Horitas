@@ -80,6 +80,17 @@ export const ensureDefaults = mutation({
       await insertMissingHolidays(ctx);
       await ctx.db.patch(settings._id, { holidaysLoaded: true });
     }
+    const items = await ctx.db.query("items").collect();
+    for (const item of items) {
+      const name =
+        item.tipo === "gestion" && item.name === "Gestión"
+          ? "Reuniones"
+          : item.tipo === "bandeja" &&
+              (item.name === "Incidentes & Service Request" || item.name === "Incidentes y Service Request")
+            ? "Incidente/Service Request"
+            : null;
+      if (name) await ctx.db.patch(item._id, { name });
+    }
   },
 });
 

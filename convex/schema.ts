@@ -71,6 +71,14 @@ export default defineSchema({
     deployDate: v.union(v.string(), v.null()),
     environment: v.union(v.string(), v.null()),
     notes: v.union(v.string(), v.null()),
+    endedOn: v.optional(v.union(v.string(), v.null())),
+    relatedKind: v.optional(
+      v.union(v.literal("requerimiento"), v.literal("incidente"), v.literal("service"), v.null()),
+    ),
+    relatedTicket: v.optional(v.union(v.string(), v.null())),
+    outcome: v.optional(
+      v.union(v.literal("exitoso"), v.literal("no_exitoso"), v.literal("rollback"), v.null()),
+    ),
     sortOrder: v.number(),
   })
     .index("by_user_period", ["userId", "year", "month"])

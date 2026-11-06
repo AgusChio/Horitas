@@ -47,7 +47,7 @@ export function Ingreso() {
             El mes, día por día.
           </h1>
           <p className="mt-5 max-w-md text-base leading-7 text-white/75">
-            Reuniones, bandeja, problemas, requerimientos y despliegues. La capacidad
+            Reuniones, incidentes, service request, problemas, requerimientos y despliegues. La capacidad
             descuenta los feriados de Argentina y de Colombia.
           </p>
           <div className="mt-8 overflow-hidden rounded-2xl border border-white/10">

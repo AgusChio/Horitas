@@ -3,9 +3,32 @@ import { mutation } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import { isIsoDate, shiftMonth } from "./dates";
-import { normalizeItem, roundHours, sameItem } from "./domain";
+import { closedBeforeMonth, normalizeItem, roundHours, sameItem, type Tipo } from "./domain";
 import { tipoValidator } from "./schema";
 import { assertPeriod, requireUser } from "./lib";
+
+function assertDeployInMonth(tipo: string, deployDate: string | null, year: number, month: number) {
+  if (tipo !== "despliegue" || !deployDate) return;
+  const [deployYear, deployMonth] = deployDate.split("-").map(Number);
+  if (deployYear !== year || deployMonth !== month) {
+    throw new ConvexError("El día del despliegue tiene que estar en este mes.");
+  }
+}
+
+async function syncClosure(
+  ctx: MutationCtx,
+  userId: Id<"users">,
+  identity: { tipo: Tipo; name: string; ticket: string | null },
+  endedOn: string | null,
+) {
+  if (identity.tipo !== "problema" && identity.tipo !== "requerimiento" && identity.tipo !== "bandeja") return;
+  const all = await ctx.db.query("items").collect();
+  for (const item of all) {
+    if (item.userId !== userId || !sameItem(item, identity)) continue;
+    if ((item.endedOn ?? null) === endedOn) continue;
+    await ctx.db.patch(item._id, { endedOn });
+  }
+}
 
 async function itemsFor(
   ctx: MutationCtx,
@@ -34,6 +57,15 @@ export const setHours = mutation({
     const [year, month] = args.date.split("-").map(Number);
     if (year !== item.year || month !== item.month) {
       throw new ConvexError("Ese día no pertenece al mes del ítem.");
+    }
+    if (closedBeforeMonth(item.endedOn, item.year, item.month)) {
+      throw new ConvexError("Este ítem está terminado y no sigue en este mes.");
+    }
+    if (item.endedOn && args.date > item.endedOn) {
+      throw new ConvexError("Este ítem está terminado. No se cargan horas después de esa fecha.");
+    }
+    if (item.tipo === "despliegue" && args.date !== item.deployDate) {
+      throw new ConvexError("El despliegue dura un solo día. Cargá las horas en la fecha del cambio.");
     }
     if (!Number.isFinite(args.hours) || args.hours < 0 || args.hours > 24) {
       throw new ConvexError("Las horas tienen que estar entre 0 y 24.");
@@ -74,6 +106,10 @@ export const create = mutation({
     deployDate: v.optional(v.string()),
     environment: v.optional(v.string()),
     notes: v.optional(v.string()),
+    endedOn: v.optional(v.string()),
+    relatedKind: v.optional(v.string()),
+    relatedTicket: v.optional(v.string()),
+    outcome: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     await requireUser(ctx);
@@ -85,14 +121,17 @@ export const create = mutation({
     if (current.some((item) => sameItem(item, normalized))) {
       throw new ConvexError("Ese ítem ya está en el mes.");
     }
+    assertDeployInMonth(normalized.tipo, normalized.deployDate, args.year, args.month);
     const sortOrder = current.reduce((max, item) => Math.max(max, item.sortOrder), 0) + 1;
-    return await ctx.db.insert("items", {
+    const id = await ctx.db.insert("items", {
       userId: args.userId,
       year: args.year,
       month: args.month,
       sortOrder,
       ...normalized,
     });
+    await syncClosure(ctx, args.userId, normalized, normalized.endedOn);
+    return id;
   },
 });
 
@@ -105,6 +144,10 @@ export const update = mutation({
     deployDate: v.optional(v.string()),
     environment: v.optional(v.string()),
     notes: v.optional(v.string()),
+    endedOn: v.optional(v.string()),
+    relatedKind: v.optional(v.string()),
+    relatedTicket: v.optional(v.string()),
+    outcome: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     await requireUser(ctx);
@@ -115,7 +158,18 @@ export const update = mutation({
     if (current.some((other) => other._id !== item._id && sameItem(other, normalized))) {
       throw new ConvexError("Ese ítem ya está en el mes.");
     }
+    assertDeployInMonth(normalized.tipo, normalized.deployDate, item.year, item.month);
     await ctx.db.patch(item._id, normalized);
+    if (normalized.tipo === "despliegue" && normalized.deployDate) {
+      const entries = await ctx.db
+        .query("entries")
+        .withIndex("by_item_date", (q) => q.eq("itemId", item._id))
+        .collect();
+      for (const entry of entries) {
+        if (entry.date !== normalized.deployDate) await ctx.db.delete(entry._id);
+      }
+    }
+    await syncClosure(ctx, item.userId, normalized, normalized.endedOn);
   },
 });
 
@@ -200,6 +254,8 @@ export const copyPrevious = mutation({
     let sortOrder = current.reduce((max, item) => Math.max(max, item.sortOrder), 0);
     let copied = 0;
     for (const item of source.sort((a, b) => a.sortOrder - b.sortOrder)) {
+      if (item.tipo === "despliegue") continue;
+      if (closedBeforeMonth(item.endedOn, args.year, args.month)) continue;
       const next = { tipo: item.tipo, name: item.name, ticket: item.ticket };
       if (identities.some((existing) => sameItem(existing, next))) continue;
       sortOrder += 1;
@@ -216,6 +272,10 @@ export const copyPrevious = mutation({
         deployDate: null,
         environment: item.environment,
         notes: item.notes,
+        endedOn: item.endedOn ?? null,
+        relatedKind: item.relatedKind ?? null,
+        relatedTicket: item.relatedTicket ?? null,
+        outcome: item.outcome ?? null,
       });
     }
     return copied;

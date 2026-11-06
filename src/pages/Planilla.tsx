@@ -1,10 +1,22 @@
 import type { FunctionReturnType } from "convex/server";
 import { useMutation, useQuery } from "convex/react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
-import { TIPO_META, TIPO_ORDER, type Tipo } from "../../convex/domain";
-import { longDate, monthTitle, scheduleSummary } from "../../convex/dates";
+import {
+  canClose,
+  DEPLOY_ENVIRONMENTS,
+  OUTCOME_LABEL,
+  OUTCOMES,
+  RELATED_KINDS,
+  RELATED_LABEL,
+  TIPO_META,
+  TIPO_ORDER,
+  type Outcome,
+  type RelatedKind,
+  type Tipo,
+} from "../../convex/domain";
+import { longDate, monthBounds, monthTitle, scheduleSummary } from "../../convex/dates";
 import { Button, ConfirmDialog, Field, Modal, Select, TextInput } from "../components/ui";
 import { errorMessage } from "../lib/errors";
 import { countryFlag, countryName, formatHours, hoursToInput, parseHours } from "../lib/format";
@@ -106,7 +118,7 @@ export function Planilla({
             void run(
               () => startMonth({ userId, year, month }),
               "Este mes ya tiene ítems.",
-              "Quedaron cargadas la bandeja y la gestión.",
+              "Quedaron cargados los incidentes y las reuniones.",
             )
           }
         >
@@ -170,7 +182,7 @@ export function Planilla({
         <div className="rounded-3xl border border-dashed border-line bg-card px-6 py-14 text-center">
           <h3 className="font-display text-3xl">Este mes está vacío</h3>
           <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-ink-soft">
-            Empezá con bandeja y gestión, copiá los ítems del mes anterior o cargá un PR, un PPM o un
+            Empezá con incidentes y reuniones, copiá los ítems del mes anterior o cargá un PR, un PPM o un
             despliegue.
           </p>
         </div>
@@ -235,14 +247,16 @@ export function Planilla({
                       Total
                     </div>
 
-                    {visible.map((item, rowIndex) => (
+                    {visible
+                      .filter((item) => item.tipo !== "despliegue" || !item.deployDate || days.some((day) => day.date === item.deployDate))
+                      .map((item, rowIndex, weekItems) => (
                       <WeekRow
                         key={item._id}
                         item={item}
                         days={days}
                         weekIndex={weekIndex}
                         rowIndex={rowIndex}
-                        rowCount={visible.length}
+                        rowCount={weekItems.length}
                         onEdit={() => setDialog({ mode: "edit", item })}
                         kind={entryKind}
                         onCommit={(date, hours) => saveHours(setHours, item._id, date, hours, entryKind, onError)}
@@ -386,11 +400,7 @@ function WeekRow({
         <span className="h-8 w-1 shrink-0 rounded-full" style={{ background: meta.dot }} />
         <button type="button" className="min-w-0 flex-1 text-left" onClick={onEdit} title={item.notes ?? "Editar ítem"}>
           <span className="block truncate text-sm font-semibold">{item.name}</span>
-          <span className="block truncate text-xs text-ink-soft">
-            {meta.asignacion}
-            {item.ticket ? ` · ${item.ticket}` : ""}
-            {item.environment ? ` · ${item.environment}` : ""}
-          </span>
+          <span className="block truncate text-xs text-ink-soft">{itemCaption(item)}</span>
         </button>
       </div>
       {days.map((day, colIndex) => {
@@ -406,6 +416,14 @@ function WeekRow({
               extra={kind === "extra"}
               label={`${kind === "extra" ? "Horas extras" : "Horas"} del ${day.day} en ${item.name}`}
               marked={item.deployDate === day.date}
+              locked={Boolean(item.endedOn && day.date > item.endedOn) || (item.tipo === "despliegue" && day.date !== item.deployDate)}
+              lockTitle={
+                item.tipo === "despliegue" && day.date !== item.deployDate
+                  ? "El despliegue dura un solo día"
+                  : item.endedOn && day.date > item.endedOn
+                    ? "Terminado: no se cargan horas después de esa fecha"
+                    : undefined
+              }
               onCommit={(hours) => onCommit(day.date, hours)}
               onInvalid={onInvalid}
             />
@@ -428,6 +446,8 @@ function HourCell({
   extra,
   label,
   marked,
+  locked,
+  lockTitle,
   onCommit,
   onInvalid,
 }: {
@@ -439,6 +459,8 @@ function HourCell({
   extra: boolean;
   label: string;
   marked: boolean;
+  locked: boolean;
+  lockTitle?: string;
   onCommit: (hours: number) => Promise<unknown>;
   onInvalid: () => void;
 }) {
@@ -451,6 +473,8 @@ function HourCell({
       data-row={row}
       data-col={col}
       value={draft ?? hoursToInput(value)}
+      disabled={locked}
+      title={locked ? lockTitle : undefined}
       inputMode="decimal"
       onFocus={(event) => {
         setDraft(hoursToInput(value));
@@ -481,7 +505,7 @@ function HourCell({
         event.preventDefault();
         focusHour(week, row + delta[0], col + delta[1], rowCount);
       }}
-      className={`hour-input ${value > 0 ? "font-semibold" : ""} ${extra ? "is-extra" : ""} ${marked ? "is-deploy" : ""}`}
+      className={`hour-input ${value > 0 ? "font-semibold" : ""} ${extra ? "is-extra" : ""} ${marked ? "is-deploy" : ""} ${locked ? "cursor-not-allowed opacity-45" : ""}`}
     />
   );
 }
@@ -523,6 +547,42 @@ function saveHours(
   return setHours({ itemId, date, hours, kind }).catch((error: unknown) => onError(errorMessage(error)));
 }
 
+function itemCaption(item: BoardItem) {
+  const parts = [TIPO_META[item.tipo].asignacion];
+  if (item.ticket) parts.push(item.ticket);
+  if (item.tipo === "despliegue" && item.deployDate) parts.push(longDate(item.deployDate));
+  if (item.environment) parts.push(item.environment);
+  if (item.outcome) parts.push(OUTCOME_LABEL[item.outcome]);
+  if (item.relatedTicket) parts.push(item.relatedTicket);
+  if (item.endedOn) parts.push(`terminado el ${longDate(item.endedOn)}`);
+  return parts.join(" · ");
+}
+
+function knownEnvironment(value: string | null | undefined) {
+  if (value === "QAM" || value === "Producción") return value;
+  const clean = (value ?? "").toLowerCase();
+  if (clean.includes("qam") || clean === "qa") return "QAM";
+  if (clean.includes("prod")) return "Producción";
+  return "";
+}
+
+type ItemDraft = {
+  tipo: Tipo;
+  name: string;
+  ticket: string;
+  deployDate: string;
+  environment: string;
+  notes: string;
+  endedOn: string;
+  relatedKind: RelatedKind | "";
+  relatedTicket: string;
+  outcome: Outcome | "";
+};
+
+function draftKey(draft: ItemDraft) {
+  return JSON.stringify(draft);
+}
+
 function ItemDialog({
   year,
   month,
@@ -543,17 +603,51 @@ function ItemDialog({
   const remove = useMutation(api.items.remove);
   const move = useMutation(api.items.move);
   const initial = dialog.mode === "edit" ? dialog.item : null;
-  const startingTipo = dialog.mode === "create" ? dialog.tipo : dialog.item.tipo;
-  const [tipo, setTipo] = useState<Tipo>(startingTipo);
-  const [name, setName] = useState(initial?.name ?? "");
-  const [ticket, setTicket] = useState(initial?.ticket ?? "");
-  const [deployDate, setDeployDate] = useState(initial?.deployDate ?? "");
-  const [environment, setEnvironment] = useState(initial?.environment ?? "");
-  const [notes, setNotes] = useState(initial?.notes ?? "");
+  const opened = useRef<ItemDraft>({
+    tipo: dialog.mode === "create" ? dialog.tipo : dialog.item.tipo,
+    name: initial?.name ?? "",
+    ticket: initial?.ticket ?? "",
+    deployDate: initial?.deployDate ?? "",
+    environment: knownEnvironment(initial?.environment),
+    notes: initial?.notes ?? "",
+    endedOn: initial?.endedOn ?? "",
+    relatedKind: initial?.relatedKind ?? "",
+    relatedTicket: initial?.relatedTicket ?? "",
+    outcome: initial?.outcome ?? "",
+  });
+  const [tipo, setTipo] = useState<Tipo>(opened.current.tipo);
+  const [name, setName] = useState(opened.current.name);
+  const [ticket, setTicket] = useState(opened.current.ticket);
+  const [deployDate, setDeployDate] = useState(opened.current.deployDate);
+  const [environment, setEnvironment] = useState(opened.current.environment);
+  const [notes, setNotes] = useState(opened.current.notes);
+  const [endedOn, setEndedOn] = useState(opened.current.endedOn);
+  const [relatedKind, setRelatedKind] = useState<RelatedKind | "">(opened.current.relatedKind);
+  const [relatedTicket, setRelatedTicket] = useState(opened.current.relatedTicket);
+  const [outcome, setOutcome] = useState<Outcome | "">(opened.current.outcome);
   const [askDelete, setAskDelete] = useState(false);
+  const [askLeave, setAskLeave] = useState(false);
   const [pending, setPending] = useState(false);
   const meta = TIPO_META[tipo];
-  const ticketMode = tipo === "problema" || tipo === "requerimiento" ? "required" : tipo === "bandeja" || tipo === "despliegue" ? "optional" : "hidden";
+  const dirty =
+    draftKey({
+      tipo,
+      name,
+      ticket,
+      deployDate,
+      environment,
+      notes,
+      endedOn,
+      relatedKind,
+      relatedTicket,
+      outcome,
+    }) !== draftKey(opened.current);
+
+  function requestClose() {
+    if (askLeave || askDelete) return;
+    if (dirty) setAskLeave(true);
+    else onClose();
+  }
 
   async function onSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -565,6 +659,10 @@ function ItemDialog({
       deployDate,
       environment,
       notes,
+      endedOn,
+      relatedKind,
+      relatedTicket,
+      outcome,
     };
     try {
       if (initial) await update({ itemId: initial._id, ...payload });
@@ -580,7 +678,7 @@ function ItemDialog({
     <Modal
       title={initial ? "Editar ítem" : "Nuevo ítem"}
       subtitle={`${meta.label} · se suma en ${meta.asignacion}`}
-      onClose={onClose}
+      onClose={requestClose}
     >
       <form onSubmit={onSubmit} className="space-y-4">
         <Field label="Tipo">
@@ -597,12 +695,14 @@ function ItemDialog({
           label="Nombre"
           hint={
             tipo === "bandeja"
-              ? "Si lo dejás vacío, queda como Incidentes & Service Request."
+              ? "Si lo dejás vacío, queda como Incidente/Service Request."
               : tipo === "gestion"
-                ? "Si lo dejás vacío, queda como Gestión."
+                ? "Si lo dejás vacío, queda como Reuniones."
                 : tipo === "documentacion"
                   ? "Si lo dejás vacío, queda como Documentación."
-                  : undefined
+                  : tipo === "despliegue"
+                    ? "Si lo dejás vacío, queda el número de cambio."
+                    : undefined
           }
         >
           <TextInput
@@ -611,40 +711,119 @@ function ItemDialog({
             placeholder={placeholderFor(tipo)}
           />
         </Field>
-        {ticketMode !== "hidden" && (
+        {tipo !== "gestion" && tipo !== "documentacion" && tipo !== "cierre" && (
           <Field
-            label={tipo === "problema" ? "Número de PR" : tipo === "requerimiento" ? "Número de PPM" : "Ticket"}
-            hint={ticketMode === "optional" ? "Opcional. Podés poner INC, SR o el número que usen." : undefined}
+            label={
+              tipo === "problema"
+                ? "Número de PR"
+                : tipo === "requerimiento"
+                  ? "Número de PPM"
+                  : tipo === "despliegue"
+                    ? "Número de cambio"
+                    : "Ticket"
+            }
+            hint={
+              tipo === "bandeja"
+                ? "Opcional. INC para un incidente o SR para un service request."
+                : tipo === "despliegue"
+                  ? "El cambio que sale, por ejemplo CH-0000."
+                  : undefined
+            }
           >
             <TextInput
-              value={ticket ?? ""}
+              value={ticket}
               onChange={(event) => setTicket(event.target.value)}
-              required={ticketMode === "required"}
-              placeholder={tipo === "problema" ? "PR-961" : tipo === "requerimiento" ? "PPM-5528" : "INC-1024"}
+              required={tipo === "problema" || tipo === "requerimiento" || tipo === "despliegue"}
+              placeholder={
+                tipo === "problema"
+                  ? "PR-961"
+                  : tipo === "requerimiento"
+                    ? "PPM-5528"
+                    : tipo === "despliegue"
+                      ? "CH-0000"
+                      : "INC-1024"
+              }
             />
           </Field>
         )}
         {tipo === "despliegue" && (
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Fecha">
-              <TextInput type="date" value={deployDate ?? ""} onChange={(event) => setDeployDate(event.target.value)} />
-            </Field>
-            <Field label="Ambiente">
+          <>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field
+                label="Día del despliegue"
+                hint="Dura un solo día. Las horas se cargan ahí y no pasa al mes siguiente."
+              >
+                <TextInput
+                  type="date"
+                  required
+                  min={monthBounds(year, month).start}
+                  max={monthBounds(year, month).end}
+                  value={deployDate}
+                  onChange={(event) => setDeployDate(event.target.value)}
+                />
+              </Field>
+              <Field label="Ambiente">
+                <Select
+                  value={environment}
+                  onChange={setEnvironment}
+                  options={[
+                    { value: "", label: "Elegí QAM o Producción" },
+                    ...DEPLOY_ENVIRONMENTS.map((value) => ({ value, label: value })),
+                  ]}
+                />
+              </Field>
+            </div>
+            <Field label="Sale de">
               <Select
-                value={environment ?? ""}
-                onChange={setEnvironment}
+                value={relatedKind}
+                onChange={(value) => setRelatedKind(value as RelatedKind | "")}
                 options={[
-                  { value: "", label: "Sin definir" },
-                  { value: "Desarrollo", label: "Desarrollo" },
-                  { value: "QA", label: "QA" },
-                  { value: "Producción", label: "Producción" },
+                  { value: "", label: "Requerimiento, incidente o service request" },
+                  ...RELATED_KINDS.map((value) => ({ value, label: RELATED_LABEL[value] })),
                 ]}
               />
             </Field>
-          </div>
+            <Field
+              label={
+                relatedKind === "incidente"
+                  ? "Ticket de incidente"
+                  : relatedKind === "service"
+                    ? "Ticket de service request"
+                    : "Ticket de requerimiento"
+              }
+              hint="El despliegue queda atado a ese ticket."
+            >
+              <TextInput
+                value={relatedTicket}
+                onChange={(event) => setRelatedTicket(event.target.value)}
+                required
+                placeholder={
+                  relatedKind === "incidente" ? "INC-1024" : relatedKind === "service" ? "SR-204" : "PPM-5528"
+                }
+              />
+            </Field>
+            <Field label="Resultado">
+              <Select
+                value={outcome}
+                onChange={(value) => setOutcome(value as Outcome | "")}
+                options={[
+                  { value: "", label: "Elegí el resultado" },
+                  ...OUTCOMES.map((value) => ({ value, label: OUTCOME_LABEL[value] })),
+                ]}
+              />
+            </Field>
+          </>
+        )}
+        {canClose(tipo) && (
+          <Field
+            label="Terminado"
+            hint="Cuando lo cierres, poné el día. Desde el mes siguiente no aparece y no se le cargan más horas."
+          >
+            <TextInput type="date" value={endedOn} onChange={(event) => setEndedOn(event.target.value)} />
+          </Field>
         )}
         <Field label="Nota">
-          <TextInput value={notes ?? ""} onChange={(event) => setNotes(event.target.value)} placeholder="Opcional" />
+          <TextInput value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Opcional" />
         </Field>
         <div className="flex flex-wrap gap-2">
           <Button type="submit" disabled={pending}>
@@ -695,8 +874,15 @@ function ItemDialog({
             }}
           />
         )}
-        {initial?.deployDate && (
-          <p className="text-xs text-ink-soft">Despliegue marcado el {longDate(initial.deployDate)}.</p>
+        {askLeave && (
+          <ConfirmDialog
+            title="Salir"
+            body="¿Seguro que querés salir? Los cambios de este ítem no se guardaron."
+            confirmLabel="Salir"
+            danger={false}
+            onClose={() => setAskLeave(false)}
+            onConfirm={onClose}
+          />
         )}
       </form>
     </Modal>
@@ -709,5 +895,6 @@ function placeholderFor(tipo: Tipo) {
   if (tipo === "despliegue") return "Salida de cierre";
   if (tipo === "cierre") return "Cierre financiero";
   if (tipo === "documentacion") return "Documentación del cierre";
+  if (tipo === "gestion") return "Reuniones";
   return "";
 }

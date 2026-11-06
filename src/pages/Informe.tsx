@@ -67,8 +67,9 @@ export function Informe({
     setExporting(true);
     try {
       const label = `${start} a ${end}`;
-      if (kind === "excel") await downloadExcel(report, label);
-      else await downloadWord(report, label);
+      const bucketTitle = group === "dia" ? "Día a día" : group === "mes" ? "Mes a mes" : "Semana a semana";
+      if (kind === "excel") await downloadExcel(report, label, "all", mode, bucketTitle);
+      else await downloadWord(report, label, "all", mode, bucketTitle);
     } catch (error) {
       setProblem(errorMessage(error));
     } finally {

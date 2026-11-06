@@ -1,4 +1,5 @@
 import { ConvexError } from "convex/values";
+import { isIsoDate } from "./dates";
 
 export const TIPO_ORDER = [
   "bandeja",
@@ -18,14 +19,14 @@ export const TIPO_META: Record<
   { label: string; asignacion: string; description: string; dot: string }
 > = {
   bandeja: {
-    label: "Bandeja",
-    asignacion: "Atención",
+    label: "Incidente/Service Request",
+    asignacion: "Incidente/Service Request",
     description: "Incidentes y service request",
     dot: "#3d7ea6",
   },
   gestion: {
-    label: "Gestión",
-    asignacion: "Gestión",
+    label: "Reuniones",
+    asignacion: "Reuniones",
     description: "Reuniones y seguimiento",
     dot: "#2f6f5e",
   },
@@ -56,10 +57,47 @@ export const TIPO_META: Record<
   despliegue: {
     label: "Despliegue",
     asignacion: "Despliegue",
-    description: "Salida a un ambiente",
+    description: "Un día, a QAM o producción",
     dot: "#9f3d3d",
   },
 };
+
+export const RELATED_KINDS = ["requerimiento", "incidente", "service"] as const;
+export type RelatedKind = (typeof RELATED_KINDS)[number];
+export const OUTCOMES = ["exitoso", "no_exitoso", "rollback"] as const;
+export type Outcome = (typeof OUTCOMES)[number];
+export const DEPLOY_ENVIRONMENTS = ["QAM", "Producción"] as const;
+
+export const RELATED_LABEL: Record<RelatedKind, string> = {
+  requerimiento: "Requerimiento",
+  incidente: "Incidente",
+  service: "Service request",
+};
+
+export const OUTCOME_LABEL: Record<Outcome, string> = {
+  exitoso: "Exitoso",
+  no_exitoso: "No exitoso",
+  rollback: "Con rollback",
+};
+
+export function isRelatedKind(value: string): value is RelatedKind {
+  return (RELATED_KINDS as readonly string[]).includes(value);
+}
+
+export function isOutcome(value: string): value is Outcome {
+  return (OUTCOMES as readonly string[]).includes(value);
+}
+
+export function canClose(tipo: Tipo) {
+  return tipo === "problema" || tipo === "requerimiento" || tipo === "bandeja";
+}
+
+export function closedBeforeMonth(endedOn: string | null | undefined, year: number, month: number) {
+  if (!endedOn) return false;
+  const [endYear, endMonth] = endedOn.split("-").map(Number);
+  if (!endYear || !endMonth) return false;
+  return year > endYear || (year === endYear && month > endMonth);
+}
 
 export function isTipo(value: string): value is Tipo {
   return (TIPO_ORDER as readonly string[]).includes(value);
@@ -69,6 +107,12 @@ export function roundHours(value: number) {
   return Math.round(value * 4) / 4;
 }
 
+function numberedTicket(ticket: string, prefix: string, example: string, message: string) {
+  const match = ticket.match(new RegExp(`^(?:${prefix}-?)?(\\d{2,})$`));
+  if (!match) throw new ConvexError(message.replace("{ejemplo}", example));
+  return `${prefix}-${match[1]}`;
+}
+
 export function normalizeItem(input: {
   tipo: string;
   name: string;
@@ -76,54 +120,92 @@ export function normalizeItem(input: {
   deployDate?: string | null;
   environment?: string | null;
   notes?: string | null;
+  endedOn?: string | null;
+  relatedKind?: string | null;
+  relatedTicket?: string | null;
+  outcome?: string | null;
 }) {
   if (!isTipo(input.tipo)) throw new ConvexError("Elegí un tipo de ítem.");
   const tipo = input.tipo;
   let ticket = (input.ticket ?? "").trim().toUpperCase().replace(/\s+/g, "");
+  let relatedKind: RelatedKind | null = null;
+  let relatedTicket: string | null = null;
+  let outcome: Outcome | null = null;
+  let deployDate: string | null = null;
+  let environment: string | null = null;
+  let endedOn: string | null = null;
 
   if (tipo === "problema") {
-    const match = ticket.match(/^(?:PR-?)?(\d{2,})$/);
-    if (!match) {
-      throw new ConvexError("El problema necesita el número de PR. Por ejemplo, PR-961.");
-    }
-    ticket = `PR-${match[1]}`;
+    ticket = numberedTicket(
+      ticket,
+      "PR",
+      "PR-961",
+      "El problema necesita el número de PR. Por ejemplo, {ejemplo}.",
+    );
   } else if (tipo === "requerimiento") {
-    const match = ticket.match(/^(?:PPM-?)?(\d{2,})$/);
-    if (!match) {
-      throw new ConvexError(
-        "El requerimiento necesita el número de PPM. Por ejemplo, PPM-5528.",
-      );
+    ticket = numberedTicket(
+      ticket,
+      "PPM",
+      "PPM-5528",
+      "El requerimiento necesita el número de PPM. Por ejemplo, {ejemplo}.",
+    );
+  } else if (tipo === "despliegue") {
+    const change = ticket.match(/^(?:CH-?)?(\d{3,8})$/);
+    if (!change) {
+      throw new ConvexError("El despliegue necesita el número de cambio. Por ejemplo, CH-0000.");
     }
-    ticket = `PPM-${match[1]}`;
+    ticket = `CH-${change[1]}`;
+    const rawDate = (input.deployDate ?? "").trim();
+    if (!isIsoDate(rawDate)) {
+      throw new ConvexError("El despliegue dura un solo día. Elegí la fecha del cambio.");
+    }
+    deployDate = rawDate;
+    const environmentName = (input.environment ?? "").trim();
+    if (environmentName !== "QAM" && environmentName !== "Producción") {
+      throw new ConvexError("Elegí el ambiente: QAM o Producción.");
+    }
+    environment = environmentName;
+    const kind = (input.relatedKind ?? "").trim();
+    if (!isRelatedKind(kind)) {
+      throw new ConvexError("Indicá si el cambio sale de un requerimiento, un incidente o un service request.");
+    }
+    relatedKind = kind;
+    const linked = (input.relatedTicket ?? "").trim().toUpperCase().replace(/\s+/g, "");
+    if (kind === "requerimiento") {
+      relatedTicket = numberedTicket(linked, "PPM", "PPM-5528", "El requerimiento relacionado necesita un PPM. Por ejemplo, {ejemplo}.");
+    } else if (kind === "incidente") {
+      relatedTicket = numberedTicket(linked, "INC", "INC-1024", "El incidente relacionado necesita un número. Por ejemplo, {ejemplo}.");
+    } else {
+      relatedTicket = numberedTicket(linked, "SR", "SR-204", "El service request relacionado necesita un número. Por ejemplo, {ejemplo}.");
+    }
+    const result = (input.outcome ?? "").trim();
+    if (!isOutcome(result)) {
+      throw new ConvexError("Indicá si el despliegue fue exitoso, no exitoso o con rollback.");
+    }
+    outcome = result;
   } else if (tipo === "gestion" || tipo === "cierre" || tipo === "documentacion") {
     ticket = "";
   } else if (ticket && !/^[A-Z0-9-]{2,40}$/.test(ticket)) {
     throw new ConvexError("El ticket solo puede tener letras, números y guiones.");
   }
 
+  if (canClose(tipo)) {
+    const rawEnd = (input.endedOn ?? "").trim();
+    if (rawEnd) {
+      if (!isIsoDate(rawEnd)) throw new ConvexError("La fecha de terminado no es válida.");
+      endedOn = rawEnd;
+    }
+  }
+
   let name = input.name.trim().replace(/\s+/g, " ");
   if (!name) {
-    if (tipo === "bandeja") name = "Incidentes & Service Request";
-    else if (tipo === "gestion") name = "Gestión";
+    if (tipo === "bandeja") name = "Incidente/Service Request";
+    else if (tipo === "gestion") name = "Reuniones";
     else if (tipo === "documentacion") name = "Documentación";
     else if (tipo === "cierre") name = "Cierre financiero";
     else name = ticket || "Despliegue";
   }
   if (name.length > 140) throw new ConvexError("El nombre es demasiado largo.");
-
-  let deployDate: string | null = null;
-  let environment: string | null = null;
-  if (tipo === "despliegue") {
-    const rawDate = (input.deployDate ?? "").trim();
-    if (rawDate) {
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(rawDate)) {
-        throw new ConvexError("La fecha de despliegue no es válida.");
-      }
-      deployDate = rawDate;
-    }
-    const environmentName = (input.environment ?? "").trim();
-    if (environmentName) environment = environmentName.slice(0, 40);
-  }
 
   const notes = (input.notes ?? "").trim();
   return {
@@ -133,6 +215,10 @@ export function normalizeItem(input: {
     deployDate,
     environment,
     notes: notes ? notes.slice(0, 500) : null,
+    endedOn,
+    relatedKind,
+    relatedTicket,
+    outcome,
   };
 }
 
