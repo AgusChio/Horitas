@@ -735,7 +735,7 @@ function listDeploys(
       _id: item._id,
       userId: item.userId,
       personName: personNames.get(item.userId) ?? "",
-      outcome: normalizeOutcome(item.outcome) ?? "exitoso",
+      outcome: normalizeOutcome(item.outcome),
       deployDate: item.deployDate ?? "",
       environment: item.environment ?? null,
       ticket: item.ticket,

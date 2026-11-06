@@ -44,7 +44,7 @@ type DeployRow = {
   _id: string;
   userId: string;
   personName: string;
-  outcome: Outcome;
+  outcome: Outcome | null;
   deployDate: string;
   environment: string | null;
   ticket: string | null;
@@ -375,7 +375,7 @@ export async function downloadExcel(
         deploy.environment ?? "–",
         longDate(deploy.deployDate),
         deploy.personName,
-        OUTCOME_LABEL[deploy.outcome],
+        deploy.outcome ? OUTCOME_LABEL[deploy.outcome] : "Pendiente",
       ]);
     }
     deploySheet.getColumn(1).width = 34;

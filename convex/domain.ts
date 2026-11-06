@@ -194,7 +194,9 @@ export function normalizeItem(input: {
       relatedTicket = `${sdMatch[1] ?? "SR"}-${sdMatch[2]}`;
     }
     const result = (input.outcome ?? "").trim();
-    if (!result || result === "exitoso") {
+    if (!result) {
+      outcome = null;
+    } else if (result === "exitoso") {
       outcome = "exitoso";
     } else if (result === "no_exitoso" || result === "rollback") {
       outcome = "no_exitoso";

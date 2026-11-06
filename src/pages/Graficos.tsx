@@ -215,6 +215,7 @@ export function TeamCharts({
         : report.deploys.filter((deploy) => deploy.userId === personId);
     const exitosos = deploys.filter((deploy) => deploy.outcome === "exitoso").length;
     const noExitosos = deploys.filter((deploy) => deploy.outcome === "no_exitoso").length;
+    const pendientes = deploys.filter((deploy) => deploy.outcome === null).length;
     const byPerson = people
       .map((person) => ({
         person,
@@ -229,6 +230,7 @@ export function TeamCharts({
       deploys,
       exitosos,
       noExitosos,
+      pendientes,
       capacityInitial,
       capacityTotal,
       executed,
@@ -346,6 +348,11 @@ export function TeamCharts({
                 <span className="rounded-full bg-rose-50 px-3 py-1.5 text-rose-800">
                   No exitosos (rollback): {view.noExitosos}
                 </span>
+                {view.pendientes > 0 && (
+                  <span className="rounded-full border border-line bg-paper px-3 py-1.5 text-ink-soft">
+                    Pendientes: {view.pendientes}
+                  </span>
+                )}
               </div>
             </div>
 
@@ -411,15 +418,21 @@ export function TeamCharts({
                             <td className="px-4 py-3">{longDate(deploy.deployDate)}</td>
                             <td className="px-4 py-3">{deploy.personName}</td>
                             <td className="px-4 py-3">
-                              <span
-                                className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
-                                  isSuccess
-                                    ? "bg-[#2f6f5e]/15 text-[#2f6f5e]"
-                                    : "bg-rose-50 text-rose-800"
-                                }`}
-                              >
-                                {OUTCOME_LABEL[deploy.outcome]}
-                              </span>
+                              {deploy.outcome ? (
+                                <span
+                                  className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
+                                    isSuccess
+                                      ? "bg-[#2f6f5e]/15 text-[#2f6f5e]"
+                                      : "bg-rose-50 text-rose-800"
+                                  }`}
+                                >
+                                  {OUTCOME_LABEL[deploy.outcome]}
+                                </span>
+                              ) : (
+                                <span className="inline-flex rounded-full border border-line bg-paper px-2.5 py-1 text-xs font-semibold text-ink-soft">
+                                  Pendiente
+                                </span>
+                              )}
                             </td>
                           </tr>
                         );

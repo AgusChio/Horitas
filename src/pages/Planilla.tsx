@@ -738,7 +738,7 @@ function ItemDialog({
     endedOn: initial?.endedOn ?? "",
     relatedKind: initial?.relatedKind ?? "",
     relatedTicket: initial?.relatedTicket ?? "",
-    outcome: initial?.outcome ?? "exitoso",
+    outcome: initial?.outcome ?? "",
   });
   const [tipo, setTipo] = useState<Tipo>(opened.current.tipo);
   const [name, setName] = useState(opened.current.name);
@@ -980,11 +980,14 @@ function ItemDialog({
                 </div>
               )}
             </Field>
-            <Field label="Resultado">
+            <Field label="Resultado" hint="Si todavía no pasó, podés dejarlo sin resultado.">
               <Select
-                value={outcome || "exitoso"}
+                value={outcome}
                 onChange={(value) => setOutcome(value as Outcome | "")}
-                options={OUTCOMES.map((value) => ({ value, label: OUTCOME_LABEL[value] }))}
+                options={[
+                  { value: "", label: "Sin resultado (todavía no pasó)" },
+                  ...OUTCOMES.map((value) => ({ value, label: OUTCOME_LABEL[value] })),
+                ]}
               />
             </Field>
           </>
