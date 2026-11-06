@@ -140,6 +140,8 @@ export const get = query({
     if (!person) return null;
     const country: Country = person.country === "CO" ? "CO" : "AR";
     const holidays = holidayMap(data.holidays, args.year, args.month, country);
+    const colombia =
+      country === "AR" ? holidayMap(data.holidays, args.year, args.month, "CO") : new Map<string, string>();
     const absences = data.absences.filter((absence) => absence.userId === person._id);
     const schedule = resolveSchedule(person, data.hoursPerDay);
     const capacity = personCapacity({
@@ -224,6 +226,7 @@ export const get = query({
         isWeekend: isWeekend(dow),
         isWorkday: schedule.workdays.includes(dow) && !holidays.has(date),
         holidayName: holidays.get(date) ?? null,
+        infoHoliday: colombia.get(date) ?? null,
         absence: absence
           ? { reason: absence.reason, discountsCapacity: absence.discountsCapacity }
           : null,

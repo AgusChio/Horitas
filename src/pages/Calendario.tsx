@@ -28,7 +28,7 @@ export function Calendario({
   const update = useMutation(api.calendar.update);
   const remove = useMutation(api.calendar.remove);
   const restore = useMutation(api.calendar.restoreOfficial);
-  const [country, setCountry] = useState<"ambos" | "AR" | "CO">("ambos");
+  const [country, setCountry] = useState<"AR" | "CO">("AR");
   const [date, setDate] = useState(`${year}-01-01`);
   const [name, setName] = useState("");
   const [holidayCountry, setHolidayCountry] = useState<"AR" | "CO">("AR");
@@ -42,8 +42,9 @@ export function Calendario({
     month,
     items: holidays.filter((holiday) => {
       const sameMonth = Number(holiday.date.slice(5, 7)) === index + 1;
-      const sameCountry = country === "ambos" || holiday.country === country;
-      return sameMonth && sameCountry;
+      if (!sameMonth) return false;
+      if (country === "CO") return holiday.country === "CO";
+      return true;
     }),
   })).filter((group) => group.items.length > 0);
 
@@ -65,21 +66,19 @@ export function Calendario({
           <div>
             <h2 className="font-display text-4xl leading-none">Feriados {year}</h2>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-ink-soft">
-              Están cargados los feriados de Argentina y Colombia de 2025, 2026 y 2027, incluidos los
-              puentes turísticos argentinos ya decretados. Los de 2027 que todavía no salieron por
-              decreto se agregan acá. Si un día no laborable igual se trabaja, borralo y la capacidad
-              se recalcula.
+              El calendario que cuenta es el argentino. Los feriados de Colombia se ven en la misma
+              lista para tenerlos presentes: no restan horas de quien está en Argentina. Para quien
+              está en Colombia, esos días sí descuentan su jornada.
             </p>
           </div>
           <Select
             className="w-full sm:w-48"
             label="País de los feriados"
             value={country}
-            onChange={(value) => setCountry(value as "ambos" | "AR" | "CO")}
+            onChange={(value) => setCountry(value as "AR" | "CO")}
             options={[
-              { value: "ambos", label: "Ambos países" },
               { value: "AR", label: "Argentina" },
-              { value: "CO", label: "Colombia" },
+              { value: "CO", label: "Solo Colombia" },
             ]}
           />
         </div>
@@ -98,7 +97,7 @@ export function Calendario({
                     <span>
                       <strong>{longDate(holiday.date)}</strong> · {countryName(holiday.country)} · {holiday.name}
                       <span className="ml-2 text-xs text-ink-soft">
-                        {holiday.source === "oficial" ? "oficial" : "cargado"}
+                        {holiday.country === "CO" ? "informativo, no resta en Argentina" : holiday.source === "oficial" ? "oficial" : "cargado"}
                       </span>
                     </span>
                     <span className="flex shrink-0 gap-3">

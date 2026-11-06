@@ -78,7 +78,8 @@ export function Capacidad({
         <h2 className="font-display text-4xl leading-none">Capacidad</h2>
         <p className="mt-2 text-sm text-ink-soft">
           {monthTitle(year, month)}. La capacidad usa los días y las horas de jornada de cada persona, y resta
-          los feriados de su país. La jornada base del equipo es de {report.hoursPerDay} h.
+          los feriados de su país. En Argentina, los de Colombia se listan aparte y no entran en la cuenta.
+          La jornada base del equipo es de {report.hoursPerDay} h.
         </p>
       </div>
 
@@ -112,6 +113,9 @@ export function Capacidad({
                 <li className="text-ink-soft">No hay feriados este mes.</li>
               )}
             </ul>
+            {country.country === "AR" && (
+              <ColombiaNote countries={report.countries} />
+            )}
           </article>
         ))}
 
@@ -377,6 +381,35 @@ function AbsenceDialog({
         </Button>
       </form>
     </Modal>
+  );
+}
+
+function ColombiaNote({
+  countries,
+}: {
+  countries: {
+    country: "AR" | "CO";
+    holidayDetails: { date: string; name: string }[];
+  }[];
+}) {
+  const argentina = new Set(
+    countries.find((country) => country.country === "AR")?.holidayDetails.map((holiday) => holiday.date) ?? [],
+  );
+  const extra = (countries.find((country) => country.country === "CO")?.holidayDetails ?? []).filter(
+    (holiday) => !argentina.has(holiday.date),
+  );
+  if (extra.length === 0) return null;
+  return (
+    <div className="mt-4 border-t border-line pt-3">
+      <p className="text-xs font-semibold tracking-wide text-ink-soft uppercase">Colombia, solo para saber</p>
+      <ul className="mt-2 space-y-1 text-sm text-ink-soft">
+        {extra.map((holiday) => (
+          <li key={holiday.date}>
+            {longDate(holiday.date)} · {holiday.name}
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
