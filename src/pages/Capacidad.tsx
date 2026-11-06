@@ -4,7 +4,7 @@ import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { longDate, monthBounds, monthTitle, scheduleSummary } from "../../convex/dates";
-import { Button, ConfirmDialog, Field, Modal, Select, Stat, TextInput } from "../components/ui";
+import { Button, ConfirmDialog, DateInput, Field, Modal, Select, Stat, TextInput } from "../components/ui";
 import { errorMessage } from "../lib/errors";
 import { countryFlag, countryName, formatHours } from "../lib/format";
 
@@ -242,13 +242,12 @@ export function Capacidad({
             />
           </Field>
           <Field label="Día">
-            <TextInput
-              type="date"
+            <DateInput
               required
               min={bounds.start}
               max={bounds.end}
               value={date}
-              onChange={(event) => setDate(event.target.value)}
+              onChange={setDate}
             />
           </Field>
           <Field
@@ -362,7 +361,7 @@ function AbsenceDialog({
         }}
       >
         <Field label="Día">
-          <TextInput type="date" required min={bounds.start} max={bounds.end} value={date} onChange={(event) => setDate(event.target.value)} />
+          <DateInput required min={bounds.start} max={bounds.end} value={date} onChange={setDate} />
         </Field>
         <Field label="Motivo">
           <TextInput required value={reason} onChange={(event) => setReason(event.target.value)} />

@@ -94,8 +94,8 @@ export function monthTitle(year: number, month: number) {
 }
 
 export function longDate(date: string) {
-  const [, month, day] = date.split("-").map(Number);
-  return `${day} de ${MONTHS[(month ?? 1) - 1]}`;
+  const [year, month, day] = date.split("-").map(Number);
+  return `${day} de ${MONTHS[(month ?? 1) - 1]} de ${year}`;
 }
 
 export function isIsoDate(value: string) {

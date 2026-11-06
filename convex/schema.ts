@@ -73,7 +73,13 @@ export default defineSchema({
     notes: v.union(v.string(), v.null()),
     endedOn: v.optional(v.union(v.string(), v.null())),
     relatedKind: v.optional(
-      v.union(v.literal("requerimiento"), v.literal("incidente"), v.literal("service"), v.null()),
+      v.union(
+        v.literal("requerimiento"),
+        v.literal("problema"),
+        v.literal("incidente"),
+        v.literal("service"),
+        v.null(),
+      ),
     ),
     relatedTicket: v.optional(v.union(v.string(), v.null())),
     outcome: v.optional(
@@ -90,6 +96,7 @@ export default defineSchema({
     date: v.string(),
     hours: v.number(),
     extraHours: v.optional(v.number()),
+    extraTicket: v.optional(v.union(v.string(), v.null())),
   })
     .index("by_item_date", ["itemId", "date"])
     .index("by_user_date", ["userId", "date"])

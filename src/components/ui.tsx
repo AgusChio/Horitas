@@ -1,5 +1,6 @@
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from "react";
 import { useEffect, useId, useRef, useState } from "react";
+import { formatDay, maskDay, parseDay } from "../lib/format";
 import { createPortal } from "react-dom";
 
 export function cn(...parts: Array<string | false | null | undefined>) {
@@ -51,6 +52,72 @@ const control =
 
 export function TextInput(props: InputHTMLAttributes<HTMLInputElement>) {
   return <input className={cn(control, props.className)} {...props} />;
+}
+
+export function DateInput({
+  value,
+  onChange,
+  min,
+  max,
+  required,
+  className,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  min?: string;
+  max?: string;
+  required?: boolean;
+  className?: string;
+}) {
+  const [text, setText] = useState(() => formatDay(value));
+  const [focused, setFocused] = useState(false);
+
+  useEffect(() => {
+    if (!focused) setText(formatDay(value));
+  }, [focused, value]);
+
+  function commit(next: string) {
+    if (!next.trim()) {
+      onChange("");
+      setText("");
+      return;
+    }
+    const iso = parseDay(next);
+    if (!iso || (min && iso < min) || (max && iso > max)) {
+      setText(formatDay(value));
+      return;
+    }
+    onChange(iso);
+    setText(formatDay(iso));
+  }
+
+  return (
+    <input
+      className={cn(control, className)}
+      inputMode="numeric"
+      placeholder="dd/mm/aaaa"
+      aria-label="Día, mes y año"
+      required={required}
+      value={text}
+      onFocus={() => setFocused(true)}
+      onChange={(event) => {
+        const next = maskDay(event.target.value);
+        setText(next);
+        if (!next.trim()) {
+          onChange("");
+          return;
+        }
+        const iso = parseDay(next);
+        if (iso && (!min || iso >= min) && (!max || iso <= max)) {
+          onChange(iso);
+        }
+      }}
+      onBlur={(event) => {
+        setFocused(false);
+        commit(event.currentTarget.value);
+      }}
+    />
+  );
 }
 
 export type SelectOption = { value: string; label: string; description?: string };

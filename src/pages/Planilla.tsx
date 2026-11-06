@@ -1,6 +1,6 @@
 import type { FunctionReturnType } from "convex/server";
 import { useMutation, useQuery } from "convex/react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import {
@@ -17,7 +17,7 @@ import {
   type Tipo,
 } from "../../convex/domain";
 import { longDate, monthBounds, monthTitle, scheduleSummary } from "../../convex/dates";
-import { Button, ConfirmDialog, Field, Modal, Select, TextInput } from "../components/ui";
+import { Button, ConfirmDialog, DateInput, Field, Modal, Select, TextInput } from "../components/ui";
 import { errorMessage } from "../lib/errors";
 import { countryFlag, countryName, formatHours, hoursToInput, parseHours } from "../lib/format";
 
@@ -43,11 +43,92 @@ export function Planilla({
   const startMonth = useMutation(api.items.startMonth);
   const copyPrevious = useMutation(api.items.copyPrevious);
   const setHours = useMutation(api.items.setHours);
+  const reorder = useMutation(api.items.reorder);
   const [filter, setFilter] = useState<"todos" | Tipo>("todos");
   const [entryKind, setEntryKind] = useState<"regular" | "extra">("regular");
   const [dialog, setDialog] = useState<
     { mode: "create"; tipo: Tipo } | { mode: "edit"; item: BoardItem } | null
   >(null);
+  const [dragState, setDragState] = useState<{ itemId: Id<"items">; weekN: number } | null>(null);
+  const [orderOverride, setOrderOverride] = useState<Id<"items">[] | null>(null);
+  const orderRef = useRef<Id<"items">[] | null>(null);
+
+  useEffect(() => {
+    if (!dragState) setOrderOverride(null);
+  }, [board?.items]);
+
+  useEffect(() => {
+    if (!dragState || !board) return;
+    const { itemId, weekN } = dragState;
+    const initialServerOrder = board.items.map((item) => item._id);
+
+    const onPointerMove = (event: PointerEvent) => {
+      const cells = [
+        ...document.querySelectorAll<HTMLElement>(`[data-week-card="${weekN}"] [data-item-id]`),
+      ];
+      if (cells.length < 2) return;
+      const weekIds = cells
+        .map((cell) => cell.dataset.itemId as Id<"items"> | undefined)
+        .filter((id): id is Id<"items"> => Boolean(id));
+      const fromIndex = weekIds.indexOf(itemId);
+      if (fromIndex < 0) return;
+
+      let toIndex = fromIndex;
+      for (let i = 0; i < cells.length; i += 1) {
+        const rect = cells[i]!.getBoundingClientRect();
+        const midY = rect.top + rect.height / 2;
+        if (i < fromIndex && event.clientY < midY) {
+          toIndex = i;
+          break;
+        }
+        if (i > fromIndex && event.clientY > midY) {
+          toIndex = i;
+        }
+      }
+      if (toIndex === fromIndex) return;
+
+      const nextWeekIds = weekIds.slice();
+      const [moved] = nextWeekIds.splice(fromIndex, 1);
+      if (!moved) return;
+      nextWeekIds.splice(toIndex, 0, moved);
+
+      const currentFull = orderRef.current ?? initialServerOrder;
+      const weekSet = new Set(weekIds);
+      let cursor = 0;
+      const nextFull = currentFull.map((id) => {
+        if (!weekSet.has(id)) return id;
+        const replacement = nextWeekIds[cursor];
+        cursor += 1;
+        return replacement ?? id;
+      });
+      orderRef.current = nextFull;
+      setOrderOverride(nextFull);
+    };
+
+    const finishDrag = () => {
+      const finalOrder = orderRef.current;
+      setDragState(null);
+      if (!finalOrder) return;
+      const changed = finalOrder.some((id, idx) => id !== initialServerOrder[idx]);
+      if (!changed) {
+        setOrderOverride(null);
+        return;
+      }
+      void reorder({ userId, year, month, itemIds: finalOrder }).catch((caught) => {
+        setOrderOverride(null);
+        onError(errorMessage(caught));
+      });
+    };
+
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", finishDrag);
+    window.addEventListener("pointercancel", finishDrag);
+    return () => {
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", finishDrag);
+      window.removeEventListener("pointercancel", finishDrag);
+    };
+  }, [board, dragState, month, onError, reorder, userId, year]);
 
   async function run(action: () => Promise<unknown>, empty: string, done: string) {
     try {
@@ -61,7 +142,13 @@ export function Planilla({
   if (board === undefined) return <p className="text-sm text-ink-soft">Cargando la planilla…</p>;
   if (board === null) return <p className="text-sm">No encontré la planilla de esta persona.</p>;
 
-  const visible = board.items.filter((item) => filter === "todos" || item.tipo === filter);
+  const orderedItems = orderOverride
+    ? orderOverride
+        .map((id) => board.items.find((item) => item._id === id))
+        .filter((item): item is BoardItem => Boolean(item))
+        .concat(board.items.filter((item) => !orderOverride.includes(item._id)))
+    : board.items;
+  const visible = orderedItems.filter((item) => filter === "todos" || item.tipo === filter);
   const ratio = board.capacity.totalHours
     ? Math.min(100, Math.round((board.executed / board.capacity.totalHours) * 100))
     : 0;
@@ -201,7 +288,7 @@ export function Planilla({
               return bits.filter((bit): bit is string => Boolean(bit));
             });
             return (
-              <article key={week.n} className="week-card">
+              <article key={week.n} data-week-card={week.n} className="week-card">
                 <header className="flex items-center gap-3 border-b border-line bg-sheet-soft px-4 py-3">
                   <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-inverse text-sm font-semibold text-on-inverse">
                     S{week.n}
@@ -257,6 +344,16 @@ export function Planilla({
                         weekIndex={weekIndex}
                         rowIndex={rowIndex}
                         rowCount={weekItems.length}
+                        isDragging={dragState?.itemId === item._id}
+                        onDragStart={(event) => {
+                          if (event.button !== 0 && event.pointerType === "mouse") return;
+                          event.preventDefault();
+                          event.stopPropagation();
+                          const initialOrder = orderedItems.map((row) => row._id);
+                          orderRef.current = initialOrder;
+                          setOrderOverride(initialOrder);
+                          setDragState({ itemId: item._id, weekN: week.n });
+                        }}
                         onEdit={() => setDialog({ mode: "edit", item })}
                         kind={entryKind}
                         onCommit={(date, hours) => saveHours(setHours, item._id, date, hours, entryKind, onError)}
@@ -340,6 +437,14 @@ function PlusIcon() {
   );
 }
 
+function GripIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+      <path d="M4 7h16M4 12h16M4 17h16" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 type BoardDay = Board["days"][number];
 
 function weekRange(start: number, end: number) {
@@ -376,7 +481,9 @@ function WeekRow({
   weekIndex,
   rowIndex,
   rowCount,
+  isDragging,
   kind,
+  onDragStart,
   onEdit,
   onCommit,
   onInvalid,
@@ -386,7 +493,9 @@ function WeekRow({
   weekIndex: number;
   rowIndex: number;
   rowCount: number;
+  isDragging: boolean;
   kind: "regular" | "extra";
+  onDragStart: (event: React.PointerEvent) => void;
   onEdit: () => void;
   onCommit: (date: string, hours: number) => Promise<unknown>;
   onInvalid: () => void;
@@ -396,7 +505,19 @@ function WeekRow({
   const weekTotal = kind === "extra" ? (item.extraWeeks[weekIndex] ?? 0) : (item.weeks[weekIndex] ?? 0);
   return (
     <>
-      <div className="flex min-w-0 items-center gap-2.5 border-r border-b border-sheet-line bg-sheet px-3 py-2">
+      <div
+        data-item-id={item._id}
+        className={`flex min-w-0 items-center gap-2 border-r border-b border-sheet-line px-2.5 py-2 ${isDragging ? "bg-peach/45" : "bg-sheet"}`}
+      >
+        <button
+          type="button"
+          aria-label={`Mover ${item.name}`}
+          title="Mantené apretado y arrastrá para cambiar el orden"
+          onPointerDown={onDragStart}
+          className="grid h-8 w-7 shrink-0 cursor-grab touch-none place-items-center rounded-lg text-ink-soft select-none hover:bg-paper hover:text-ink active:cursor-grabbing"
+        >
+          <GripIcon />
+        </button>
         <span className="h-8 w-1 shrink-0 rounded-full" style={{ background: meta.dot }} />
         <button type="button" className="min-w-0 flex-1 text-left" onClick={onEdit} title={item.notes ?? "Editar ítem"}>
           <span className="block truncate text-sm font-semibold">{item.name}</span>
@@ -601,7 +722,6 @@ function ItemDialog({
   const create = useMutation(api.items.create);
   const update = useMutation(api.items.update);
   const remove = useMutation(api.items.remove);
-  const move = useMutation(api.items.move);
   const initial = dialog.mode === "edit" ? dialog.item : null;
   const opened = useRef<ItemDraft>({
     tipo: dialog.mode === "create" ? dialog.tipo : dialog.item.tipo,
@@ -753,13 +873,12 @@ function ItemDialog({
                 label="Día del despliegue"
                 hint="Dura un solo día. Las horas se cargan ahí y no pasa al mes siguiente."
               >
-                <TextInput
-                  type="date"
+                <DateInput
                   required
                   min={monthBounds(year, month).start}
                   max={monthBounds(year, month).end}
                   value={deployDate}
-                  onChange={(event) => setDeployDate(event.target.value)}
+                  onChange={setDeployDate}
                 />
               </Field>
               <Field label="Ambiente">
@@ -778,27 +897,43 @@ function ItemDialog({
                 value={relatedKind}
                 onChange={(value) => setRelatedKind(value as RelatedKind | "")}
                 options={[
-                  { value: "", label: "Requerimiento, incidente o service request" },
+                  { value: "", label: "Requerimiento, problema, incidente o service request" },
                   ...RELATED_KINDS.map((value) => ({ value, label: RELATED_LABEL[value] })),
                 ]}
               />
             </Field>
             <Field
               label={
-                relatedKind === "incidente"
-                  ? "Ticket de incidente"
-                  : relatedKind === "service"
-                    ? "Ticket de service request"
-                    : "Ticket de requerimiento"
+                relatedKind === "problema"
+                  ? "Ticket de problema"
+                  : relatedKind === "incidente"
+                    ? "Ticket de incidente"
+                    : relatedKind === "service"
+                      ? "Ticket de service request"
+                      : "Ticket de requerimiento"
               }
               hint="El despliegue queda atado a ese ticket."
             >
               <TextInput
                 value={relatedTicket}
-                onChange={(event) => setRelatedTicket(event.target.value)}
+                onChange={(event) => {
+                  const next = event.target.value;
+                  setRelatedTicket(next);
+                  const upper = next.trim().toUpperCase();
+                  if (upper.startsWith("PR")) setRelatedKind("problema");
+                  else if (upper.startsWith("PPM")) setRelatedKind("requerimiento");
+                  else if (upper.startsWith("INC")) setRelatedKind("incidente");
+                  else if (upper.startsWith("SR")) setRelatedKind("service");
+                }}
                 required
                 placeholder={
-                  relatedKind === "incidente" ? "INC-1024" : relatedKind === "service" ? "SR-204" : "PPM-5528"
+                  relatedKind === "problema"
+                    ? "PR-961"
+                    : relatedKind === "incidente"
+                      ? "INC-1024"
+                      : relatedKind === "service"
+                        ? "SR-204"
+                        : "PPM-5528"
                 }
               />
             </Field>
@@ -819,7 +954,7 @@ function ItemDialog({
             label="Terminado"
             hint="Cuando lo cierres, poné el día. Desde el mes siguiente no aparece y no se le cargan más horas."
           >
-            <TextInput type="date" value={endedOn} onChange={(event) => setEndedOn(event.target.value)} />
+            <DateInput value={endedOn} onChange={setEndedOn} />
           </Field>
         )}
         <Field label="Nota">
@@ -830,29 +965,9 @@ function ItemDialog({
             {pending ? "Guardando…" : "Guardar"}
           </Button>
           {initial && (
-            <>
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() =>
-                  void move({ itemId: initial._id, direction: "up" }).catch((caught) => onError(errorMessage(caught)))
-                }
-              >
-                Subir
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() =>
-                  void move({ itemId: initial._id, direction: "down" }).catch((caught) => onError(errorMessage(caught)))
-                }
-              >
-                Bajar
-              </Button>
-              <Button type="button" variant="danger" onClick={() => setAskDelete(true)}>
-                Eliminar
-              </Button>
-            </>
+            <Button type="button" variant="danger" onClick={() => setAskDelete(true)}>
+              Eliminar
+            </Button>
           )}
         </div>
         {askDelete && initial && (

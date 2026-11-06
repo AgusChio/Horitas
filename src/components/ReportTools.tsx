@@ -1,5 +1,5 @@
 import type { RangeGroup } from "../../convex/dates";
-import { Button, Select } from "./ui";
+import { Button, DateInput, Select } from "./ui";
 
 export function ReportTools({
   start,
@@ -42,21 +42,11 @@ export function ReportTools({
       </label>
       <label className="text-sm font-semibold">
         Desde
-        <input
-          type="date"
-          value={start}
-          onChange={(event) => onStart(event.target.value)}
-          className="mt-1 block rounded-full border border-line bg-card px-3 py-2 text-sm"
-        />
+        <DateInput className="mt-1 rounded-full" value={start} onChange={onStart} />
       </label>
       <label className="text-sm font-semibold">
         Hasta
-        <input
-          type="date"
-          value={end}
-          onChange={(event) => onEnd(event.target.value)}
-          className="mt-1 block rounded-full border border-line bg-card px-3 py-2 text-sm"
-        />
+        <DateInput className="mt-1 rounded-full" value={end} onChange={onEnd} />
       </label>
       <Button type="button" variant="ghost" disabled={!canDownload || busy} onClick={onExcel} title={canDownload ? "Descargar Excel" : "Se habilita cuando hay horas cargadas"}>
         Excel

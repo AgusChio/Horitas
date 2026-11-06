@@ -3,7 +3,7 @@ import { mutation } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import { isIsoDate, shiftMonth } from "./dates";
-import { closedBeforeMonth, normalizeItem, roundHours, sameItem, type Tipo } from "./domain";
+import { closedBeforeMonth, normalizeItem, roundHours, sameItem, TIPO_ORDER, type Tipo } from "./domain";
 import { tipoValidator } from "./schema";
 import { assertPeriod, requireUser } from "./lib";
 
@@ -48,6 +48,7 @@ export const setHours = mutation({
     date: v.string(),
     hours: v.number(),
     kind: v.optional(v.union(v.literal("regular"), v.literal("extra"))),
+    extraTicket: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     await requireUser(ctx);
@@ -77,12 +78,21 @@ export const setHours = mutation({
       .unique();
     const regular = args.kind === "extra" ? (existing?.hours ?? 0) : next;
     const extra = args.kind === "extra" ? next : (existing?.extraHours ?? 0);
+    const typedTicket = (args.extraTicket ?? "").trim().toUpperCase().replace(/\s+/g, "");
+    let extraTicket: string | null = existing?.extraTicket ?? null;
+    if (extra === 0) extraTicket = null;
+    else if (args.kind === "extra" && typedTicket) {
+      if (!/^[A-Z0-9-]{2,40}$/.test(typedTicket)) {
+        throw new ConvexError("Las horas extras necesitan el ticket donde se trabajaron.");
+      }
+      extraTicket = typedTicket;
+    }
     if (regular === 0 && extra === 0) {
       if (existing) await ctx.db.delete(existing._id);
       return;
     }
     if (existing) {
-      await ctx.db.patch(existing._id, { hours: regular, extraHours: extra });
+      await ctx.db.patch(existing._id, { hours: regular, extraHours: extra, extraTicket });
       return;
     }
     await ctx.db.insert("entries", {
@@ -91,6 +101,7 @@ export const setHours = mutation({
       date: args.date,
       hours: regular,
       extraHours: extra,
+      extraTicket,
     });
   },
 });
@@ -195,16 +206,55 @@ export const move = mutation({
     const item = await ctx.db.get(args.itemId);
     if (!item) return;
     const current = await itemsFor(ctx, item.userId, item.year, item.month);
-    const sameType = current
-      .filter((other) => other.tipo === item.tipo)
-      .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name, "es"));
-    const index = sameType.findIndex((other) => other._id === item._id);
+    const sorted = current.sort(
+      (a, b) =>
+        a.sortOrder - b.sortOrder ||
+        TIPO_ORDER.indexOf(a.tipo) - TIPO_ORDER.indexOf(b.tipo) ||
+        a.name.localeCompare(b.name, "es"),
+    );
+    const index = sorted.findIndex((other) => other._id === item._id);
     const target = index + (args.direction === "up" ? -1 : 1);
-    if (index < 0 || target < 0 || target >= sameType.length) return;
-    const reordered = sameType.slice();
+    if (index < 0 || target < 0 || target >= sorted.length) return;
+    const reordered = sorted.slice();
     const [picked] = reordered.splice(index, 1);
     if (!picked) return;
     reordered.splice(target, 0, picked);
+    for (const [position, row] of reordered.entries()) {
+      const sortOrder = (position + 1) * 10;
+      if (row.sortOrder !== sortOrder) await ctx.db.patch(row._id, { sortOrder });
+    }
+  },
+});
+
+export const reorder = mutation({
+  args: {
+    userId: v.id("users"),
+    year: v.number(),
+    month: v.number(),
+    itemIds: v.array(v.id("items")),
+  },
+  handler: async (ctx, args) => {
+    await requireUser(ctx);
+    assertPeriod(args.year, args.month);
+    const current = await itemsFor(ctx, args.userId, args.year, args.month);
+    const sorted = current.sort(
+      (a, b) =>
+        a.sortOrder - b.sortOrder ||
+        TIPO_ORDER.indexOf(a.tipo) - TIPO_ORDER.indexOf(b.tipo) ||
+        a.name.localeCompare(b.name, "es"),
+    );
+    const byId = new Map(sorted.map((item) => [item._id, item]));
+    const picked = args.itemIds
+      .map((id) => byId.get(id))
+      .filter((item): item is NonNullable<typeof item> => Boolean(item));
+    const pickedSet = new Set(picked.map((item) => item._id));
+    let cursor = 0;
+    const reordered = sorted.map((item) => {
+      if (!pickedSet.has(item._id)) return item;
+      const replacement = picked[cursor];
+      cursor += 1;
+      return replacement ?? item;
+    });
     for (const [position, row] of reordered.entries()) {
       const sortOrder = (position + 1) * 10;
       if (row.sortOrder !== sortOrder) await ctx.db.patch(row._id, { sortOrder });

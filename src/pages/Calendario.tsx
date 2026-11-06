@@ -3,7 +3,7 @@ import { useState } from "react";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { MONTHS, isWeekend, isoDate, longDate, weekdayIndex } from "../../convex/dates";
-import { Button, ConfirmDialog, Field, Modal, Select, TextInput } from "../components/ui";
+import { Button, ConfirmDialog, DateInput, Field, Modal, Select, TextInput } from "../components/ui";
 import { errorMessage } from "../lib/errors";
 import { countryName } from "../lib/format";
 
@@ -135,7 +135,7 @@ export function Calendario({
         <form onSubmit={onSubmit} className="space-y-3 rounded-3xl border border-line bg-card p-4">
           <h3 className="font-display text-3xl">Agregar</h3>
           <Field label="Fecha">
-            <TextInput type="date" required value={date} onChange={(event) => setDate(event.target.value)} />
+            <DateInput required value={date} onChange={setDate} />
           </Field>
           <Field label="País">
             <Select
@@ -242,7 +242,7 @@ function HolidayDialog({
         }}
       >
         <Field label="Fecha">
-          <TextInput type="date" required value={date} onChange={(event) => setDate(event.target.value)} />
+          <DateInput required value={date} onChange={setDate} />
         </Field>
         <Field label="País">
           <Select

@@ -157,18 +157,20 @@ export const get = query({
       .filter((item) => item.userId === person._id && !closedBeforeMonth(item.endedOn, item.year, item.month))
       .sort(
         (a, b) =>
-          TIPO_ORDER.indexOf(a.tipo) - TIPO_ORDER.indexOf(b.tipo) ||
           a.sortOrder - b.sortOrder ||
+          TIPO_ORDER.indexOf(a.tipo) - TIPO_ORDER.indexOf(b.tipo) ||
           a.name.localeCompare(b.name, "es"),
       );
 
     const hoursOf = new Map<string, number>();
     const extraOf = new Map<string, number>();
+    const extraTicketOf = new Map<string, string | null>();
     for (const entry of data.entries) {
       if (entry.userId !== person._id) continue;
       const key = `${entry.itemId}|${entry.date}`;
       hoursOf.set(key, entry.hours);
       extraOf.set(key, entry.extraHours ?? 0);
+      extraTicketOf.set(key, entry.extraTicket ?? null);
     }
 
     const dayTotals = Array.from({ length: data.last }, () => 0);
@@ -178,6 +180,7 @@ export const get = query({
     const rows = items.map((item) => {
       const hours = Array.from({ length: data.last }, () => 0);
       const extras = Array.from({ length: data.last }, () => 0);
+      const extraTickets: Array<string | null> = Array.from({ length: data.last }, () => null);
       const weekHours = emptyWeeks(weeks.length);
       const extraWeeks = emptyWeeks(weeks.length);
       for (let day = 1; day <= data.last; day += 1) {
@@ -188,6 +191,7 @@ export const get = query({
         const weekIndex = weekNumber(args.year, args.month, day) - 1;
         hours[day - 1] = value;
         extras[day - 1] = overtime;
+        extraTickets[day - 1] = extraTicketOf.get(key) ?? null;
         dayTotals[day - 1] += value;
         dayExtras[day - 1] += overtime;
         weekHours[weekIndex] += value;
@@ -209,6 +213,7 @@ export const get = query({
         outcome: item.outcome ?? null,
         hours: hours.map(round2),
         extras: extras.map(round2),
+        extraTickets,
         weeks: weekHours.map(round2),
         extraWeeks: extraWeeks.map(round2),
         total: round2(hours.reduce((sum, value) => sum + value, 0)),
@@ -419,6 +424,7 @@ async function buildTeamMonth(ctx: QueryCtx, year: number, month: number) {
       capacityInitial,
       capacityTotal,
       executed,
+      deploys: listDeploys(data.items, data.start, data.end),
     };
 }
 
@@ -642,7 +648,31 @@ async function buildTeamRange(ctx: QueryCtx, start: string, end: string, group: 
     capacityInitial: people.reduce((sum, person) => sum + person.availableHours, 0),
     capacityTotal: people.reduce((sum, person) => sum + person.totalHours, 0),
     executed: round2(people.reduce((sum, person) => sum + person.executed, 0)),
+    deploys: listDeploys(items, start, end),
   };
+}
+
+function listDeploys(
+  items: {
+    tipo: string;
+    deployDate: string | null;
+    outcome?: "exitoso" | "no_exitoso" | "rollback" | null;
+    userId: Id<"users">;
+    ticket: string | null;
+    name: string;
+  }[],
+  start: string,
+  end: string,
+) {
+  return items
+    .filter((item) => item.tipo === "despliegue" && item.deployDate && item.deployDate >= start && item.deployDate <= end)
+    .map((item) => ({
+      userId: item.userId,
+      outcome: item.outcome ?? null,
+      deployDate: item.deployDate ?? "",
+      ticket: item.ticket,
+      name: item.name,
+    }));
 }
 
 export const teamRange = query({
