@@ -1,0 +1,169 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Manrope", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Fraunces", ui-serif, Georgia, serif;
+  --color-ink: #1b2430;
+  --color-ink-soft: #5c6570;
+  --color-paper: #f3efe6;
+  --color-card: #fffdf8;
+  --color-line: #e4dccb;
+  --color-copper: #c4622d;
+  --color-copper-dark: #8d431c;
+  --color-peach: #e7c7b0;
+  --color-periwinkle: #b7c6ea;
+  --color-moss: #2f6f5e;
+  --color-holiday: #f6e2ac;
+  --color-weekend: #e7eef6;
+  --color-sheet: #fffdf8;
+  --color-sheet-head: #f7f3ea;
+  --color-sheet-soft: #fbf8f2;
+  --color-sheet-line: #efe8da;
+  --color-inverse: #1b2430;
+  --color-on-inverse: #fffdf8;
+}
+
+.dark {
+  --color-ink: #f3efe6;
+  --color-ink-soft: #b7b0a4;
+  --color-paper: #12161c;
+  --color-card: #1c222c;
+  --color-line: #343b48;
+  --color-copper: #e08a55;
+  --color-copper-dark: #f2b08a;
+  --color-peach: #4a3428;
+  --color-periwinkle: #2c3a52;
+  --color-moss: #8fcebb;
+  --color-holiday: #4a3d22;
+  --color-weekend: #243044;
+  --color-sheet: #1c222c;
+  --color-sheet-head: #262d39;
+  --color-sheet-soft: #222833;
+  --color-sheet-line: #313846;
+  --color-inverse: #f3efe6;
+  --color-on-inverse: #14181f;
+  color-scheme: dark;
+}
+
+.dark .text-rose-800 {
+  color: #fecdd3;
+}
+
+.dark .text-rose-700 {
+  color: #fda4af;
+}
+
+.dark .bg-rose-50 {
+  background: #3f2228;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top left, rgba(231, 199, 176, 0.45), transparent 28rem),
+    var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+}
+
+.dark body {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent 9rem),
+    var(--color-paper);
+}
+
+html {
+  scrollbar-color: #c9bfae transparent;
+  scrollbar-width: thin;
+}
+
+.dark {
+  scrollbar-color: #4a5568 #12161c;
+}
+
+::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: #c9bfae;
+  background-clip: padding-box;
+}
+
+.dark ::-webkit-scrollbar-track {
+  background: #12161c;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: #4a5568;
+  background-clip: padding-box;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #627087;
+}
+
+.modal-scrim {
+  background: rgba(27, 36, 48, 0.46);
+}
+
+.dark .modal-scrim {
+  background: rgba(0, 0, 0, 0.68);
+}
+
+.dark .app-bar {
+  background: #181e27;
+  border-color: transparent;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.06), 0 14px 36px rgba(0, 0, 0, 0.38);
+  backdrop-filter: none;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+.week-card {
+  overflow: hidden;
+  border: 1px solid var(--color-line);
+  border-radius: 1.15rem;
+  background: var(--color-sheet);
+  box-shadow: 0 10px 28px rgba(27, 36, 48, 0.04);
+}
+
+.dark .week-card {
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.32);
+}
+
+.week-scroll {
+  overflow-x: auto;
+}
+
+.hour-input {
+  height: 3.15rem;
+  width: 100%;
+  background: transparent;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  outline: none;
+}
+
+.hour-input.is-extra {
+  background: color-mix(in srgb, var(--color-peach) 55%, transparent);
+}
+
+.hour-input:focus,
+.hour-input.is-deploy {
+  background: var(--color-sheet);
+  box-shadow: inset 0 0 0 2px var(--color-copper);
+}
