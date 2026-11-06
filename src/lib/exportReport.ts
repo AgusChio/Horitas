@@ -928,7 +928,7 @@ export async function downloadExcel(
 
 const W_FONT = "Calibri";
 const W_DISPLAY = "Georgia";
-const PAGE_WIDTH = 14400;
+const PAGE_WIDTH = 13680;
 const NONE = { style: BorderStyle.NONE, size: 0, color: "FFFFFF" };
 const LINE = { style: BorderStyle.SINGLE, size: 4, color: hex(C.line) };
 const NO_BORDERS = { top: NONE, bottom: NONE, left: NONE, right: NONE, insideHorizontal: NONE, insideVertical: NONE };
@@ -967,17 +967,19 @@ function wCell(
     borders?: { top?: typeof LINE; bottom?: typeof LINE; left?: typeof LINE; right?: typeof LINE };
     span?: number;
     margins?: number;
+    padX?: number;
     align?: typeof VerticalAlign.TOP | typeof VerticalAlign.CENTER | typeof VerticalAlign.BOTTOM;
   } = {},
 ) {
   const margin = options.margins ?? 100;
+  const padX = options.padX ?? margin + 40;
   return new TableCell({
     children,
     width: { size: width, type: WidthType.DXA },
     columnSpan: options.span,
     verticalAlign: options.align ?? VerticalAlign.CENTER,
     shading: options.fill ? { type: ShadingType.CLEAR, color: "auto", fill: hex(options.fill) } : undefined,
-    margins: { top: margin, bottom: margin, left: margin + 40, right: margin + 40 },
+    margins: { top: margin, bottom: margin, left: padX, right: padX },
     borders: {
       top: options.borders?.top ?? NONE,
       bottom: options.borders?.bottom ?? NONE,
@@ -1015,25 +1017,25 @@ function wNote(text: string, after = 160) {
 }
 
 function wStats(view: View) {
-  const gap = 240;
-  const card = (PAGE_WIDTH - gap * 3) / 4;
+  const gap = 200;
+  const card = Math.floor((PAGE_WIDTH - gap * 3) / 4);
   const widths: number[] = [];
   const cells: TableCell[] = [];
   STATS(view).forEach((stat, index) => {
     if (index > 0) {
       widths.push(gap);
-      cells.push(wCell([wPara([])], gap));
+      cells.push(wCell([wPara([])], gap, { margins: 0, padX: 0 }));
     }
     widths.push(card);
     cells.push(
       wCell(
         [
           wPara([wRun(stat.label.toUpperCase(), { size: 14, bold: true, color: C.soft })]),
-          wPara([wRun(stat.value, { font: W_DISPLAY, size: 40 })], { before: 40 }),
-          wPara([wRun(stat.hint, { size: 16, color: C.soft })], { before: 40 }),
+          wPara([wRun(stat.value, { font: W_DISPLAY, size: 38 })], { before: 40 }),
+          wPara([wRun(stat.hint, { size: 15, color: C.soft })], { before: 40 }),
         ],
         card,
-        { fill: C.card, borders: { top: LINE, bottom: LINE, left: LINE, right: LINE }, margins: 140 },
+        { fill: C.card, borders: { top: LINE, bottom: LINE, left: LINE, right: LINE }, margins: 120, padX: 140 },
       ),
     );
   });
@@ -1041,14 +1043,14 @@ function wStats(view: View) {
 }
 
 function wChartRow(charts: ReturnType<typeof buildCharts>) {
-  const column = PAGE_WIDTH / 3;
-  const pixels = 300;
+  const column = Math.floor(PAGE_WIDTH / 3);
+  const pixels = 285;
   return wTable(
     [column, column, column],
     [
       new TableRow({
         children: [charts.capacity, charts.tipo, charts.people].map((chart) =>
-          wCell([wImage(chart, pixels)], column, { margins: 40 }),
+          wCell([wImage(chart, pixels)], column, { margins: 20, padX: 10 }),
         ),
       }),
     ],
@@ -1090,10 +1092,10 @@ function wDeploys(view: View, charts: ReturnType<typeof buildCharts>) {
     chips.push(wRun("   "), wRun(`  Pendientes: ${view.pendientes}  `, { bold: true, size: 16, color: C.soft, fill: C.paper }));
   }
   blocks.push(wPara(chips, { after: 160 }));
-  blocks.push(wImage(charts.deploys, 460));
+  blocks.push(wImage(charts.deploys, 440));
   blocks.push(wPara([], { after: 120 }));
 
-  const widths = [2900, 3300, 1500, 2500, 2300, 1900];
+  const widths = [2700, 3100, 1400, 2400, 2200, 1880];
   const headers = ["Cambio", "Relacionado con", "Ambiente", "Fecha", "Persona", "Resultado"];
   const headerRow = new TableRow({
     tableHeader: true,
@@ -1115,14 +1117,14 @@ function wDeploys(view: View, charts: ReturnType<typeof buildCharts>) {
     const border = { bottom: LINE };
     return new TableRow({
       children: [
-        wCell(twoLines(deploy.ticket ?? deploy.name, cambioSub), widths[0] ?? 2900, { fill: C.card, borders: border }),
-        wCell(twoLines(related.main, related.sub), widths[1] ?? 3300, { fill: C.card, borders: border }),
-        wCell([wPara([wRun(deploy.environment ?? "–", { size: 17 })])], widths[2] ?? 1500, { fill: C.card, borders: border }),
-        wCell([wPara([wRun(longDate(deploy.deployDate), { size: 17 })])], widths[3] ?? 2500, { fill: C.card, borders: border }),
-        wCell([wPara([wRun(deploy.personName, { size: 17 })])], widths[4] ?? 2300, { fill: C.card, borders: border }),
+        wCell(twoLines(deploy.ticket ?? deploy.name, cambioSub), widths[0] ?? 2700, { fill: C.card, borders: border }),
+        wCell(twoLines(related.main, related.sub), widths[1] ?? 3100, { fill: C.card, borders: border }),
+        wCell([wPara([wRun(deploy.environment ?? "–", { size: 17 })])], widths[2] ?? 1400, { fill: C.card, borders: border }),
+        wCell([wPara([wRun(longDate(deploy.deployDate), { size: 17 })])], widths[3] ?? 2400, { fill: C.card, borders: border }),
+        wCell([wPara([wRun(deploy.personName, { size: 17 })])], widths[4] ?? 2200, { fill: C.card, borders: border }),
         wCell(
           [wPara([wRun(result.label, { bold: true, size: 15, color: result.ink })], { align: AlignmentType.CENTER })],
-          widths[5] ?? 1900,
+          widths[5] ?? 1880,
           { fill: result.fill, borders: border },
         ),
       ],
@@ -1133,18 +1135,23 @@ function wDeploys(view: View, charts: ReturnType<typeof buildCharts>) {
 }
 
 function detailWidths(count: number) {
-  const item = 4200;
-  const assignment = 2400;
-  const total = 1000;
-  const week = Math.max(420, Math.floor((PAGE_WIDTH - item - assignment - total) / Math.max(count, 1)));
-  return [item, assignment, ...Array.from({ length: count }, () => week), total];
+  const safeCount = Math.max(count, 1);
+  const item = safeCount > 14 ? 2500 : safeCount > 6 ? 3200 : 4000;
+  const assignment = safeCount > 14 ? 1500 : safeCount > 6 ? 1800 : 2200;
+  const total = safeCount > 14 ? 800 : 950;
+  const remaining = PAGE_WIDTH - item - assignment - total;
+  const week = Math.floor(remaining / safeCount);
+  const extra = remaining - week * safeCount;
+  return [item + extra, assignment, ...Array.from({ length: count }, () => week), total];
 }
 
 function wPersonBlocks(view: View, weeks: Bucket[], mode: Mode) {
   const labels = weeks.map((week, index) => bucketName(week, index));
   const widths = detailWidths(labels.length);
   const full = widths.reduce((sum, width) => sum + width, 0);
-  const numberSize = labels.length > 14 ? 13 : 17;
+  const compact = labels.length > 10;
+  const numberSize = labels.length > 14 ? 13 : 16;
+  const numPadX = compact ? 15 : 50;
   const blocks: (Paragraph | Table)[] = [];
   for (const { person, rows } of view.byPerson) {
     const total = rows.reduce((sum, item) => sum + item.total, 0);
@@ -1178,14 +1185,15 @@ function wPersonBlocks(view: View, weeks: Bucket[], mode: Mode) {
       children: ["Ítem", "Asignación", ...labels, "Total"].map((label, index) =>
         wCell(
           [
-            wPara([wRun(label.toUpperCase(), { size: 13, bold: true, color: C.soft })], {
+            wPara([wRun(label.toUpperCase(), { size: compact && index > 1 ? 11 : 13, bold: true, color: C.soft })], {
               align: index <= 1 ? AlignmentType.LEFT : AlignmentType.CENTER,
             }),
           ],
-          widths[index] ?? 800,
+          widths[index] ?? 600,
           {
             fill: C.paper,
-            margins: 70,
+            margins: 65,
+            padX: index <= 1 ? 80 : numPadX,
             borders: { bottom: LINE, left: index === 0 ? LINE : undefined, right: index === widths.length - 1 ? LINE : undefined },
           },
         ),
@@ -1199,32 +1207,33 @@ function wPersonBlocks(view: View, weeks: Bucket[], mode: Mode) {
         children: [
           wCell(
             [
-              wPara([wRun(item.name, { bold: true, size: 17 })]),
+              wPara([wRun(item.name, { bold: true, size: 16 })]),
               ...(subtitle ? [wPara([wRun(subtitle, { size: 14, color: C.soft })])] : []),
             ],
-            widths[0] ?? 4200,
+            widths[0] ?? 4000,
             {
               fill: C.card,
-              margins: 70,
+              margins: 65,
+              padX: 80,
               borders: { bottom: LINE, left: { style: BorderStyle.SINGLE, size: 24, color: hex(meta.dot) } },
             },
           ),
           wCell(
-            [wPara([wRun("● ", { size: 17, color: meta.dot }), wRun(meta.asignacion, { size: 17 })])],
-            widths[1] ?? 2400,
-            { fill: C.card, margins: 70, borders: { bottom: LINE } },
+            [wPara([wRun("● ", { size: 16, color: meta.dot }), wRun(meta.asignacion, { size: 16 })])],
+            widths[1] ?? 2200,
+            { fill: C.card, margins: 65, padX: 80, borders: { bottom: LINE } },
           ),
           ...values.map((value, index) =>
             wCell(
               [wPara([wRun(formatHours(value, "–"), { size: numberSize })], { align: AlignmentType.CENTER })],
               widths[index + 2] ?? 600,
-              { fill: C.card, margins: 50, borders: { bottom: LINE } },
+              { fill: C.card, margins: 50, padX: numPadX, borders: { bottom: LINE } },
             ),
           ),
           wCell(
             [wPara([wRun(formatHours(item.total, "0"), { size: numberSize, bold: true })], { align: AlignmentType.CENTER })],
-            widths[widths.length - 1] ?? 1000,
-            { fill: C.card, margins: 50, borders: { bottom: LINE, right: LINE } },
+            widths[widths.length - 1] ?? 950,
+            { fill: C.card, margins: 50, padX: numPadX, borders: { bottom: LINE, right: LINE } },
           ),
         ],
       });
@@ -1235,23 +1244,24 @@ function wPersonBlocks(view: View, weeks: Bucket[], mode: Mode) {
     );
     const totalRow = new TableRow({
       children: [
-        wCell([wPara([wRun(`Total ${person.name}`, { bold: true, size: 17 })])], (widths[0] ?? 0) + (widths[1] ?? 0), {
+        wCell([wPara([wRun(`Total ${person.name}`, { bold: true, size: 16 })])], (widths[0] ?? 0) + (widths[1] ?? 0), {
           span: 2,
           fill: C.sheetHead,
-          margins: 70,
+          margins: 65,
+          padX: 80,
           borders: { bottom: LINE, left: LINE },
         }),
         ...weekTotals.map((value, index) =>
           wCell(
             [wPara([wRun(formatHours(value, "0"), { size: numberSize, bold: true })], { align: AlignmentType.CENTER })],
             widths[index + 2] ?? 600,
-            { fill: C.sheetHead, margins: 50, borders: { bottom: LINE } },
+            { fill: C.sheetHead, margins: 50, padX: numPadX, borders: { bottom: LINE } },
           ),
         ),
         wCell(
           [wPara([wRun(formatHours(total, "0"), { size: numberSize, bold: true })], { align: AlignmentType.CENTER })],
-          widths[widths.length - 1] ?? 1000,
-          { fill: C.sheetHead, margins: 50, borders: { bottom: LINE, right: LINE } },
+          widths[widths.length - 1] ?? 950,
+          { fill: C.sheetHead, margins: 50, padX: numPadX, borders: { bottom: LINE, right: LINE } },
         ),
       ],
     });
@@ -1279,7 +1289,8 @@ export async function downloadWord(
       {
         properties: {
           page: {
-            size: { orientation: PageOrientation.LANDSCAPE, width: 15840, height: 12240 },
+            // docx swaps width & height when PageOrientation.LANDSCAPE is set, so pass portrait dimensions (8.5" x 11")
+            size: { orientation: PageOrientation.LANDSCAPE, width: 12240, height: 15840 },
             margin: { top: 720, bottom: 720, left: 720, right: 720 },
           },
         },
@@ -1290,7 +1301,7 @@ export async function downloadWord(
           wPara([], { after: 200 }),
           wChartRow(charts),
           wPara([], { after: 120 }),
-          wImage(charts.buckets, 940),
+          wImage(charts.buckets, 880),
           ...wDeploys(view, charts),
           wHeading("Detalle por persona", 480),
           wNote(
