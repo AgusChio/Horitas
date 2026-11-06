@@ -3,6 +3,7 @@ import { ConvexError } from "convex/values";
 export const TIPO_ORDER = [
   "bandeja",
   "gestion",
+  "documentacion",
   "cierre",
   "problema",
   "requerimiento",
@@ -27,6 +28,12 @@ export const TIPO_META: Record<
     asignacion: "Gestión",
     description: "Reuniones y seguimiento",
     dot: "#2f6f5e",
+  },
+  documentacion: {
+    label: "Documentación",
+    asignacion: "Documentación",
+    description: "Manuales, actas y documentos",
+    dot: "#5c4d8a",
   },
   cierre: {
     label: "Cierre financiero",
@@ -88,7 +95,7 @@ export function normalizeItem(input: {
       );
     }
     ticket = `PPM-${match[1]}`;
-  } else if (tipo === "gestion" || tipo === "cierre") {
+  } else if (tipo === "gestion" || tipo === "cierre" || tipo === "documentacion") {
     ticket = "";
   } else if (ticket && !/^[A-Z0-9-]{2,40}$/.test(ticket)) {
     throw new ConvexError("El ticket solo puede tener letras, números y guiones.");
@@ -98,6 +105,7 @@ export function normalizeItem(input: {
   if (!name) {
     if (tipo === "bandeja") name = "Incidentes & Service Request";
     else if (tipo === "gestion") name = "Gestión";
+    else if (tipo === "documentacion") name = "Documentación";
     else if (tipo === "cierre") name = "Cierre financiero";
     else name = ticket || "Despliegue";
   }

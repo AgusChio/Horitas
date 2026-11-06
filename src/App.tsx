@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "../convex/_generated/api";
 import type { Id } from "../convex/_generated/dataModel";
 import { monthTitle, shiftMonth } from "../convex/dates";
-import { ErrorDialog, Select } from "./components/ui";
+import { ConfirmDialog, ErrorDialog, Select } from "./components/ui";
 import { Ingreso } from "./pages/Ingreso";
 import { Planilla } from "./pages/Planilla";
 import { Capacidad } from "./pages/Capacidad";
@@ -54,6 +54,7 @@ function Home() {
   const [picked, setPicked] = useState<string | null>(() => localStorage.getItem("horas.user"));
   const [toast, setToast] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
+  const [askLeave, setAskLeave] = useState(false);
 
   useEffect(() => {
     if (ready.current) return;
@@ -83,9 +84,19 @@ function Home() {
     return (
       <main className="mx-auto max-w-md px-6 py-24 text-center">
         <h1 className="font-display text-4xl">Esta cuenta está inactiva</h1>
-        <button type="button" className="mt-6 font-semibold text-copper-dark" onClick={() => void signOut()}>
+        <button type="button" className="mt-6 font-semibold text-copper-dark" onClick={() => setAskLeave(true)}>
           Cerrar sesión
         </button>
+        {askLeave && (
+          <ConfirmDialog
+            title="Salir"
+            body="¿Seguro que querés salir?"
+            confirmLabel="Salir"
+            danger={false}
+            onClose={() => setAskLeave(false)}
+            onConfirm={() => void signOut()}
+          />
+        )}
       </main>
     );
   }
@@ -134,7 +145,7 @@ function Home() {
           >
             {me.theme === "dark" ? <SunIcon /> : <MoonIcon />}
           </button>
-          <button type="button" className="text-sm font-semibold text-ink-soft" onClick={() => void signOut()}>
+          <button type="button" className="text-sm font-semibold text-ink-soft" onClick={() => setAskLeave(true)}>
             Salir
           </button>
         </div>
@@ -237,6 +248,16 @@ function Home() {
         </div>
       </nav>
       {problem && <ErrorDialog message={problem} onClose={() => setProblem(null)} />}
+      {askLeave && (
+        <ConfirmDialog
+          title="Salir"
+          body="¿Seguro que querés salir?"
+          confirmLabel="Salir"
+          danger={false}
+          onClose={() => setAskLeave(false)}
+          onConfirm={() => void signOut()}
+        />
+      )}
       {toast && (
         <div className="fixed right-4 bottom-24 z-50 max-w-sm rounded-2xl bg-inverse px-4 py-3 text-sm text-on-inverse shadow-xl md:bottom-4" role="status">
           {toast}

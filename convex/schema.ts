@@ -7,6 +7,7 @@ export const countryValidator = v.union(v.literal("AR"), v.literal("CO"));
 export const tipoValidator = v.union(
   v.literal("bandeja"),
   v.literal("gestion"),
+  v.literal("documentacion"),
   v.literal("cierre"),
   v.literal("problema"),
   v.literal("requerimiento"),

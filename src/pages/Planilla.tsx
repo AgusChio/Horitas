@@ -600,7 +600,9 @@ function ItemDialog({
               ? "Si lo dejás vacío, queda como Incidentes & Service Request."
               : tipo === "gestion"
                 ? "Si lo dejás vacío, queda como Gestión."
-                : undefined
+                : tipo === "documentacion"
+                  ? "Si lo dejás vacío, queda como Documentación."
+                  : undefined
           }
         >
           <TextInput
@@ -706,5 +708,6 @@ function placeholderFor(tipo: Tipo) {
   if (tipo === "requerimiento") return "Optimización Cierre de Ingresos";
   if (tipo === "despliegue") return "Salida de cierre";
   if (tipo === "cierre") return "Cierre financiero";
+  if (tipo === "documentacion") return "Documentación del cierre";
   return "";
 }
