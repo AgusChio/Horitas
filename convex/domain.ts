@@ -64,7 +64,7 @@ export const TIPO_META: Record<
 
 export const RELATED_KINDS = ["requerimiento", "problema", "incidente", "service"] as const;
 export type RelatedKind = (typeof RELATED_KINDS)[number];
-export const OUTCOMES = ["exitoso", "no_exitoso", "rollback"] as const;
+export const OUTCOMES = ["exitoso", "no_exitoso"] as const;
 export type Outcome = (typeof OUTCOMES)[number];
 export const DEPLOY_ENVIRONMENTS = ["QAM", "Producción"] as const;
 
@@ -75,11 +75,17 @@ export const RELATED_LABEL: Record<RelatedKind, string> = {
   service: "Service request",
 };
 
-export const OUTCOME_LABEL: Record<Outcome, string> = {
+export const OUTCOME_LABEL: Record<Outcome | "rollback", string> = {
   exitoso: "Exitoso",
-  no_exitoso: "No exitoso",
-  rollback: "Con rollback",
+  no_exitoso: "No exitoso (rollback)",
+  rollback: "No exitoso (rollback)",
 };
+
+export function normalizeOutcome(value: string | null | undefined): Outcome | null {
+  if (value === "exitoso") return "exitoso";
+  if (value === "no_exitoso" || value === "rollback") return "no_exitoso";
+  return null;
+}
 
 export function isRelatedKind(value: string): value is RelatedKind {
   return (RELATED_KINDS as readonly string[]).includes(value);
@@ -181,14 +187,19 @@ export function normalizeItem(input: {
     } else if (kind === "incidente") {
       relatedTicket = numberedTicket(linked, "INC", "INC-1024", "El incidente relacionado necesita un número. Por ejemplo, {ejemplo}.");
     } else {
-      relatedTicket = numberedTicket(linked, "SR", "SR-204", "El service request relacionado necesita un número. Por ejemplo, {ejemplo}.");
+      const sdMatch = linked.match(/^(?:(SR|SD)-?)?(\d{2,})$/);
+      if (!sdMatch) {
+        throw new ConvexError("El service request relacionado necesita un número. Por ejemplo, SR-204 o SD-204.");
+      }
+      relatedTicket = `${sdMatch[1] ?? "SR"}-${sdMatch[2]}`;
     }
     const result = (input.outcome ?? "").trim();
-    if (result) {
-      if (!isOutcome(result)) {
-        throw new ConvexError("El resultado tiene que ser exitoso, no exitoso o con rollback.");
-      }
-      outcome = result;
+    if (!result || result === "exitoso") {
+      outcome = "exitoso";
+    } else if (result === "no_exitoso" || result === "rollback") {
+      outcome = "no_exitoso";
+    } else {
+      throw new ConvexError("Indicá si el despliegue fue exitoso o no exitoso (rollback).");
     }
   } else if (tipo === "gestion" || tipo === "cierre" || tipo === "documentacion") {
     ticket = "";

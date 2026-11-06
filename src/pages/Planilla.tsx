@@ -420,6 +420,7 @@ export function Planilla({
           year={year}
           month={month}
           userId={userId}
+          items={board.items}
           dialog={dialog}
           onClose={() => setDialog(null)}
           onError={onError}
@@ -674,7 +675,9 @@ function itemCaption(item: BoardItem) {
   if (item.tipo === "despliegue" && item.deployDate) parts.push(longDate(item.deployDate));
   if (item.environment) parts.push(item.environment);
   if (item.outcome) parts.push(OUTCOME_LABEL[item.outcome]);
-  if (item.relatedTicket) parts.push(item.relatedTicket);
+  if (item.relatedTicket) {
+    parts.push(item.relatedName ? `${item.relatedTicket} (${item.relatedName})` : item.relatedTicket);
+  }
   if (item.endedOn) parts.push(`terminado el ${longDate(item.endedOn)}`);
   return parts.join(" · ");
 }
@@ -708,6 +711,7 @@ function ItemDialog({
   year,
   month,
   userId,
+  items,
   dialog,
   onClose,
   onError,
@@ -715,6 +719,7 @@ function ItemDialog({
   year: number;
   month: number;
   userId: Id<"users">;
+  items: BoardItem[];
   dialog: { mode: "create"; tipo: Tipo } | { mode: "edit"; item: BoardItem };
   onClose: () => void;
   onError: (message: string) => void;
@@ -733,7 +738,7 @@ function ItemDialog({
     endedOn: initial?.endedOn ?? "",
     relatedKind: initial?.relatedKind ?? "",
     relatedTicket: initial?.relatedTicket ?? "",
-    outcome: initial?.outcome ?? "",
+    outcome: initial?.outcome ?? "exitoso",
   });
   const [tipo, setTipo] = useState<Tipo>(opened.current.tipo);
   const [name, setName] = useState(opened.current.name);
@@ -909,10 +914,10 @@ function ItemDialog({
                   : relatedKind === "incidente"
                     ? "Ticket de incidente"
                     : relatedKind === "service"
-                      ? "Ticket de service request"
+                      ? "Ticket de service request (SR / SD)"
                       : "Ticket de requerimiento"
               }
-              hint="El despliegue queda atado a ese ticket."
+              hint="El despliegue queda relacionado con ese PR, PPM, INC o SR/SD."
             >
               <TextInput
                 value={relatedTicket}
@@ -923,7 +928,7 @@ function ItemDialog({
                   if (upper.startsWith("PR")) setRelatedKind("problema");
                   else if (upper.startsWith("PPM")) setRelatedKind("requerimiento");
                   else if (upper.startsWith("INC")) setRelatedKind("incidente");
-                  else if (upper.startsWith("SR")) setRelatedKind("service");
+                  else if (upper.startsWith("SR") || upper.startsWith("SD")) setRelatedKind("service");
                 }}
                 required
                 placeholder={
@@ -936,15 +941,50 @@ function ItemDialog({
                         : "PPM-5528"
                 }
               />
+              {items.some((candidate) => candidate.tipo !== "despliegue" && Boolean(candidate.ticket)) && (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {items
+                    .filter(
+                      (candidate): candidate is BoardItem & { ticket: string } =>
+                        candidate.tipo !== "despliegue" && Boolean(candidate.ticket),
+                    )
+                    .map((candidate) => {
+                      const active = relatedTicket.trim().toUpperCase() === candidate.ticket.toUpperCase();
+                      return (
+                        <button
+                          key={candidate._id}
+                          type="button"
+                          onClick={() => {
+                            setRelatedTicket(candidate.ticket);
+                            const upper = candidate.ticket.toUpperCase();
+                            if (candidate.tipo === "problema" || upper.startsWith("PR")) {
+                              setRelatedKind("problema");
+                            } else if (candidate.tipo === "requerimiento" || upper.startsWith("PPM")) {
+                              setRelatedKind("requerimiento");
+                            } else if (upper.startsWith("SR") || upper.startsWith("SD")) {
+                              setRelatedKind("service");
+                            } else {
+                              setRelatedKind("incidente");
+                            }
+                          }}
+                          className={`rounded-full border px-2.5 py-1 text-xs font-semibold transition ${
+                            active
+                              ? "border-copper bg-peach text-ink"
+                              : "border-line bg-paper text-ink-soft hover:text-ink"
+                          }`}
+                        >
+                          {candidate.ticket} · {candidate.name}
+                        </button>
+                      );
+                    })}
+                </div>
+              )}
             </Field>
             <Field label="Resultado">
               <Select
-                value={outcome}
+                value={outcome || "exitoso"}
                 onChange={(value) => setOutcome(value as Outcome | "")}
-                options={[
-                  { value: "", label: "Elegí el resultado" },
-                  ...OUTCOMES.map((value) => ({ value, label: OUTCOME_LABEL[value] })),
-                ]}
+                options={OUTCOMES.map((value) => ({ value, label: OUTCOME_LABEL[value] }))}
               />
             </Field>
           </>

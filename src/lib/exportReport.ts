@@ -12,8 +12,8 @@ import {
   WidthType,
 } from "docx";
 import ExcelJS from "exceljs";
-import { cumulative } from "../../convex/dates";
-import { TIPO_META, TIPO_ORDER, type Tipo } from "../../convex/domain";
+import { cumulative, longDate } from "../../convex/dates";
+import { OUTCOME_LABEL, RELATED_LABEL, TIPO_META, TIPO_ORDER, type Outcome, type RelatedKind, type Tipo } from "../../convex/domain";
 import { formatHours } from "./format";
 
 type Bucket = { n: number; label?: string; start: number; end: number };
@@ -30,16 +30,35 @@ type ItemRow = {
   name: string;
   tipo: Tipo;
   ticket: string | null;
+  relatedKind?: RelatedKind | null;
+  relatedTicket?: string | null;
+  relatedName?: string | null;
+  environment?: string | null;
+  outcome?: Outcome | null;
   userId: string;
   personName: string;
   weeks: number[];
   total: number;
+};
+type DeployRow = {
+  _id: string;
+  userId: string;
+  personName: string;
+  outcome: Outcome;
+  deployDate: string;
+  environment: string | null;
+  ticket: string | null;
+  name: string;
+  relatedKind: RelatedKind | null;
+  relatedTicket: string | null;
+  relatedName: string | null;
 };
 
 export type ExportReport = {
   weeks: Bucket[];
   people: PersonRow[];
   rows: ItemRow[];
+  deploys?: DeployRow[];
 };
 
 type Mode = "semana" | "acumulado";
@@ -69,6 +88,9 @@ function sliceReport(report: ExportReport, personId: string) {
   const people = personId === "all" ? report.people : report.people.filter((person) => person._id === personId);
   const ids = new Set(people.map((person) => person._id));
   const rows = personId === "all" ? report.rows : report.rows.filter((row) => ids.has(row.userId));
+  const deploys = (report.deploys ?? []).filter((deploy) => personId === "all" || ids.has(deploy.userId));
+  const exitosos = deploys.filter((deploy) => deploy.outcome === "exitoso").length;
+  const noExitosos = deploys.filter((deploy) => deploy.outcome === "no_exitoso").length;
   const byTipo = TIPO_ORDER.map((tipo) => {
     const matching = rows.filter((row) => row.tipo === tipo);
     const weeks = report.weeks.map((_, index) => matching.reduce((sum, row) => sum + (row.weeks[index] ?? 0), 0));
@@ -80,9 +102,19 @@ function sliceReport(report: ExportReport, personId: string) {
       total: matching.reduce((sum, row) => sum + row.total, 0),
     };
   }).filter((row) => row.total > 0);
+  const byPerson = people
+    .map((person) => ({
+      person,
+      rows: rows.filter((row) => row.userId === person._id && row.total > 0),
+    }))
+    .filter((group) => group.rows.length > 0);
   return {
     people,
     rows,
+    byPerson,
+    deploys,
+    exitosos,
+    noExitosos,
     byTipo,
     capacityInitial: people.reduce((sum, person) => sum + person.availableHours, 0),
     capacityTotal: people.reduce((sum, person) => sum + person.totalHours, 0),
@@ -270,7 +302,24 @@ function chartSet(
       labels,
       view.byTipo.map((row) => ({ label: row.label, color: row.color, values: row.weeks })),
     ),
+    view.deploys.length > 0
+      ? barsPng("Resultado de despliegues", [
+          { label: "Exitosos", value: view.exitosos, color: "#2f6f5e" },
+          { label: "No exitosos (rollback)", value: view.noExitosos, color: "#9f3d3d" },
+        ])
+      : null,
   ].filter((image): image is Uint8Array => image !== null);
+}
+
+function rowSubtitle(row: ItemRow) {
+  const parts: string[] = [];
+  if (row.ticket) parts.push(row.ticket);
+  if (row.relatedTicket) {
+    parts.push(row.relatedName ? `→ ${row.relatedTicket} (${row.relatedName})` : `→ ${row.relatedTicket}`);
+  }
+  if (row.environment) parts.push(row.environment);
+  if (row.outcome) parts.push(OUTCOME_LABEL[row.outcome]);
+  return parts.join(" · ");
 }
 
 function detailRows(rows: ItemRow[], mode: Mode) {
@@ -309,29 +358,74 @@ export async function downloadExcel(
     });
   });
 
-  const detail = book.addWorksheet("Detalle");
-  const headers = ["Ítem", "Asignación", "Persona", ...report.weeks.map((week, index) => bucketName(week, index)), "Total"];
+  if (view.deploys.length > 0) {
+    const deploySheet = book.addWorksheet("Despliegues");
+    deploySheet.addRow(["Cambio", "Relacionado con", "Ambiente", "Fecha", "Persona", "Resultado"]);
+    const deployHeader = deploySheet.getRow(1);
+    deployHeader.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 11 };
+    deployHeader.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1B2430" } };
+    for (const deploy of view.deploys) {
+      const cambio = deploy.ticket && deploy.name !== deploy.ticket ? `${deploy.ticket} · ${deploy.name}` : (deploy.ticket ?? deploy.name);
+      const rel = deploy.relatedTicket
+        ? `${deploy.relatedTicket}${deploy.relatedName ? ` · ${deploy.relatedName}` : deploy.relatedKind ? ` · ${RELATED_LABEL[deploy.relatedKind]}` : ""}`
+        : "–";
+      deploySheet.addRow([
+        cambio,
+        rel,
+        deploy.environment ?? "–",
+        longDate(deploy.deployDate),
+        deploy.personName,
+        OUTCOME_LABEL[deploy.outcome],
+      ]);
+    }
+    deploySheet.getColumn(1).width = 34;
+    deploySheet.getColumn(2).width = 38;
+    deploySheet.getColumn(3).width = 16;
+    deploySheet.getColumn(4).width = 24;
+    deploySheet.getColumn(5).width = 24;
+    deploySheet.getColumn(6).width = 24;
+  }
+
+  const detail = book.addWorksheet("Detalle por persona");
+  const headers = ["Persona", "Ítem", "Asignación", ...report.weeks.map((week, index) => bucketName(week, index)), "Total"];
   detail.addRow(headers);
   const header = detail.getRow(1);
   header.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 11 };
   header.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1B2430" } };
   header.alignment = { vertical: "middle" };
-  for (const row of detailRows(view.rows, mode)) {
-    const item = row.ticket ? `${row.name}\n${row.ticket}` : row.name;
-    const values = [
-      item,
-      TIPO_META[row.tipo].asignacion,
-      row.personName,
-      ...report.weeks.map((_, index) => formatHours(row.series[index] ?? 0, "–")),
-      formatHours(row.total, "0"),
-    ];
-    const added = detail.addRow(values);
-    added.alignment = { wrapText: true, vertical: "middle" };
-    if (row.ticket) added.height = 32;
+  for (const group of view.byPerson) {
+    for (const row of detailRows(group.rows, mode)) {
+      const sub = rowSubtitle(row);
+      const item = sub ? `${row.name}\n${sub}` : row.name;
+      const values = [
+        group.person.name,
+        item,
+        TIPO_META[row.tipo].asignacion,
+        ...report.weeks.map((_, index) => formatHours(row.series[index] ?? 0, "–")),
+        formatHours(row.total, "0"),
+      ];
+      const added = detail.addRow(values);
+      added.alignment = { wrapText: true, vertical: "middle" };
+      if (sub) added.height = 32;
+    }
+    const personWeekTotals = report.weeks.map((_, index) =>
+      group.rows.reduce((sum, row) => sum + (row.weeks[index] ?? 0), 0),
+    );
+    const footerSeries = mode === "acumulado" ? cumulative(personWeekTotals) : personWeekTotals;
+    const personTotal = group.rows.reduce((sum, row) => sum + row.total, 0);
+    const totalRow = detail.addRow([
+      `Total ${group.person.name}`,
+      "",
+      "",
+      ...footerSeries.map((hours) => formatHours(hours, "0")),
+      formatHours(personTotal, "0"),
+    ]);
+    totalRow.font = { bold: true };
+    totalRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF7F3EA" } };
   }
-  detail.getColumn(1).width = 36;
-  detail.getColumn(2).width = 28;
-  detail.getColumn(3).width = 24;
+  detail.getColumn(1).width = 24;
+  detail.getColumn(2).width = 38;
+  detail.getColumn(3).width = 28;
   for (let column = 4; column <= headers.length; column += 1) detail.getColumn(column).width = 14;
   detail.views = [{ state: "frozen", ySplit: 1 }];
   detail.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: headers.length } };
@@ -356,13 +450,12 @@ function wordCell(text: string, width: number, header = false) {
 }
 
 function itemCell(row: ItemRow, width: number) {
+  const sub = rowSubtitle(row);
   return new TableCell({
     width: { size: width, type: WidthType.DXA },
     children: [
       new Paragraph({ children: [new TextRun({ text: row.name, bold: true, size: 16 })] }),
-      ...(row.ticket
-        ? [new Paragraph({ children: [new TextRun({ text: row.ticket, size: 14, color: "5C6670" })] })]
-        : []),
+      ...(sub ? [new Paragraph({ children: [new TextRun({ text: sub, size: 14, color: "5C6670" })] })] : []),
     ],
   });
 }
@@ -378,27 +471,38 @@ export async function downloadWord(
   const images = chartSet(view, report.weeks, bucketTitle);
   const labels = report.weeks.map((week, index) => bucketName(week, index));
   const widths = columnWidths(labels.length);
-  const header = ["Ítem", "Asignación", "Persona", ...labels, "Total"];
-  const table = new Table({
-    width: { size: widths.reduce((sum, width) => sum + width, 0), type: WidthType.DXA },
-    rows: [
-      new TableRow({
-        tableHeader: true,
-        children: header.map((text, index) => wordCell(text, widths[index] ?? 800, true)),
+  const header = ["Ítem", "Asignación", ...labels, "Total"];
+
+  const personSections = view.byPerson.flatMap(({ person, rows: personRows }) => {
+    const personTotal = personRows.reduce((sum, row) => sum + row.total, 0);
+    const table = new Table({
+      width: { size: widths.reduce((sum, width) => sum + width, 0), type: WidthType.DXA },
+      rows: [
+        new TableRow({
+          tableHeader: true,
+          children: header.map((text, index) => wordCell(text, widths[index] ?? 800, true)),
+        }),
+        ...detailRows(personRows, mode).map(
+          (row) =>
+            new TableRow({
+              children: [
+                itemCell(row, widths[0] ?? 3200),
+                wordCell(TIPO_META[row.tipo].asignacion, widths[1] ?? 2200),
+                ...row.series.map((hours, index) => wordCell(formatHours(hours, "–"), widths[index + 2] ?? 800)),
+                wordCell(formatHours(row.total, "0"), widths[widths.length - 1] ?? 900),
+              ],
+            }),
+        ),
+      ],
+    });
+    return [
+      new Paragraph({
+        text: `${person.name} (${formatHours(personTotal, "0")} h)`,
+        heading: HeadingLevel.HEADING_2,
+        spacing: { before: 280, after: 120 },
       }),
-      ...detailRows(view.rows, mode).map(
-        (row) =>
-          new TableRow({
-            children: [
-              itemCell(row, widths[0] ?? 2400),
-              wordCell(TIPO_META[row.tipo].asignacion, widths[1] ?? 1800),
-              wordCell(row.personName, widths[2] ?? 1600),
-              ...row.series.map((hours, index) => wordCell(formatHours(hours, "–"), widths[index + 3] ?? 800)),
-              wordCell(formatHours(row.total, "0"), widths[widths.length - 1] ?? 800),
-            ],
-          }),
-      ),
-    ],
+      table,
+    ];
   });
 
   const doc = new Document({
@@ -429,8 +533,8 @@ export async function downloadWord(
               ],
             }),
           ]),
-          new Paragraph({ text: "Detalle", heading: HeadingLevel.HEADING_1, spacing: { before: 400 } }),
-          table,
+          new Paragraph({ text: "Detalle por persona", heading: HeadingLevel.HEADING_1, spacing: { before: 400 } }),
+          ...personSections,
         ],
       },
     ],
@@ -441,11 +545,10 @@ export async function downloadWord(
 
 function columnWidths(weekCount: number) {
   const page = 14400;
-  const item = 2800;
-  const assignment = 2200;
-  const person = 1800;
+  const item = 3600;
+  const assignment = 2400;
   const total = 900;
-  const leftover = Math.max(700, page - item - assignment - person - total);
+  const leftover = Math.max(700, page - item - assignment - total);
   const week = Math.max(700, Math.floor(leftover / Math.max(weekCount, 1)));
-  return [item, assignment, person, ...Array.from({ length: weekCount }, () => week), total];
+  return [item, assignment, ...Array.from({ length: weekCount }, () => week), total];
 }

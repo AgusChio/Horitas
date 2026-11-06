@@ -20,11 +20,29 @@ import {
   weeksOfMonth,
   type RangeGroup,
 } from "./dates";
-import { closedBeforeMonth, TIPO_ORDER, type Country, type Tipo } from "./domain";
+import {
+  closedBeforeMonth,
+  normalizeOutcome,
+  TIPO_ORDER,
+  type Country,
+  type Outcome,
+  type RelatedKind,
+  type Tipo,
+} from "./domain";
 import { assertPeriod, displayName, getSettings, getUser } from "./lib";
 
 function round2(value: number) {
   return Math.round(value * 100) / 100;
+}
+
+function ticketNameMap(items: { tipo: string; ticket: string | null; name: string }[]) {
+  const byTicket = new Map<string, string>();
+  for (const item of items) {
+    if (item.tipo !== "despliegue" && item.ticket && item.name && item.name !== item.ticket) {
+      byTicket.set(item.ticket, item.name);
+    }
+  }
+  return byTicket;
 }
 
 function holidayMap(
@@ -175,6 +193,7 @@ export const get = query({
 
     const dayTotals = Array.from({ length: data.last }, () => 0);
     const dayExtras = Array.from({ length: data.last }, () => 0);
+    const ticketNames = ticketNameMap(data.items);
     let executed = 0;
     let extra = 0;
     const rows = items.map((item) => {
@@ -210,7 +229,8 @@ export const get = query({
         endedOn: item.endedOn ?? null,
         relatedKind: item.relatedKind ?? null,
         relatedTicket: item.relatedTicket ?? null,
-        outcome: item.outcome ?? null,
+        relatedName: item.relatedTicket ? (ticketNames.get(item.relatedTicket) ?? null) : null,
+        outcome: normalizeOutcome(item.outcome),
         hours: hours.map(round2),
         extras: extras.map(round2),
         extraTickets,
@@ -325,6 +345,7 @@ async function buildTeamMonth(ctx: QueryCtx, year: number, month: number) {
       .sort((a, b) => a.name.localeCompare(b.name, "es"));
 
     const visibleItems = data.items.filter((item) => !closedBeforeMonth(item.endedOn, item.year, item.month));
+    const ticketNames = ticketNameMap(visibleItems);
     const itemName = new Map(visibleItems.map((item) => [item._id, item]));
     const grouped = new Map<
       string,
@@ -333,6 +354,13 @@ async function buildTeamMonth(ctx: QueryCtx, year: number, month: number) {
         name: string;
         tipo: Tipo;
         ticket: string | null;
+        relatedKind: RelatedKind | null;
+        relatedTicket: string | null;
+        relatedName: string | null;
+        environment: string | null;
+        deployDate: string | null;
+        outcome: Outcome | null;
+        sortOrder: number;
         userId: Id<"users">;
         personName: string;
         weeks: number[];
@@ -348,6 +376,13 @@ async function buildTeamMonth(ctx: QueryCtx, year: number, month: number) {
         name: item.name,
         tipo: item.tipo,
         ticket: item.ticket,
+        relatedKind: item.relatedKind ?? null,
+        relatedTicket: item.relatedTicket ?? null,
+        relatedName: item.relatedTicket ? (ticketNames.get(item.relatedTicket) ?? null) : null,
+        environment: item.environment ?? null,
+        deployDate: item.deployDate ?? null,
+        outcome: normalizeOutcome(item.outcome),
+        sortOrder: item.sortOrder,
         userId: item.userId,
         personName: owner.name,
         weeks: emptyWeeks(weeks.length),
@@ -369,6 +404,8 @@ async function buildTeamMonth(ctx: QueryCtx, year: number, month: number) {
       .map((row) => ({ ...row, weeks: row.weeks.map(round2), total: round2(row.total) }))
       .sort(
         (a, b) =>
+          a.personName.localeCompare(b.personName, "es") ||
+          a.sortOrder - b.sortOrder ||
           b.total - a.total ||
           TIPO_ORDER.indexOf(a.tipo) - TIPO_ORDER.indexOf(b.tipo) ||
           a.name.localeCompare(b.name, "es"),
@@ -424,7 +461,7 @@ async function buildTeamMonth(ctx: QueryCtx, year: number, month: number) {
       capacityInitial,
       capacityTotal,
       executed,
-      deploys: listDeploys(data.items, data.start, data.end),
+      deploys: listDeploys(data.items, people, data.start, data.end),
     };
 }
 
@@ -582,6 +619,7 @@ async function buildTeamRange(ctx: QueryCtx, start: string, end: string, group: 
     })
     .sort((a, b) => a.name.localeCompare(b.name, "es"));
 
+  const ticketNames = ticketNameMap(visibleItems);
   const grouped = new Map<
     string,
     {
@@ -589,6 +627,13 @@ async function buildTeamRange(ctx: QueryCtx, start: string, end: string, group: 
       name: string;
       tipo: Tipo;
       ticket: string | null;
+      relatedKind: RelatedKind | null;
+      relatedTicket: string | null;
+      relatedName: string | null;
+      environment: string | null;
+      deployDate: string | null;
+      outcome: Outcome | null;
+      sortOrder: number;
       userId: Id<"users">;
       personName: string;
       weeks: number[];
@@ -606,6 +651,13 @@ async function buildTeamRange(ctx: QueryCtx, start: string, end: string, group: 
       name: item.name,
       tipo: item.tipo,
       ticket: item.ticket,
+      relatedKind: item.relatedKind ?? null,
+      relatedTicket: item.relatedTicket ?? null,
+      relatedName: item.relatedTicket ? (ticketNames.get(item.relatedTicket) ?? null) : null,
+      environment: item.environment ?? null,
+      deployDate: item.deployDate ?? null,
+      outcome: normalizeOutcome(item.outcome),
+      sortOrder: item.sortOrder,
       userId: item.userId,
       personName: owner.name,
       weeks: emptyWeeks(buckets.length),
@@ -619,7 +671,13 @@ async function buildTeamRange(ctx: QueryCtx, start: string, end: string, group: 
   }
   const rows = [...grouped.values()]
     .map((row) => ({ ...row, weeks: row.weeks.map(round2), total: round2(row.total) }))
-    .sort((a, b) => b.total - a.total || a.name.localeCompare(b.name, "es"));
+    .sort(
+      (a, b) =>
+        a.personName.localeCompare(b.personName, "es") ||
+        a.sortOrder - b.sortOrder ||
+        b.total - a.total ||
+        a.name.localeCompare(b.name, "es"),
+    );
 
   return {
     hoursPerDay,
@@ -648,31 +706,45 @@ async function buildTeamRange(ctx: QueryCtx, start: string, end: string, group: 
     capacityInitial: people.reduce((sum, person) => sum + person.availableHours, 0),
     capacityTotal: people.reduce((sum, person) => sum + person.totalHours, 0),
     executed: round2(people.reduce((sum, person) => sum + person.executed, 0)),
-    deploys: listDeploys(items, start, end),
+    deploys: listDeploys(items, people, start, end),
   };
 }
 
 function listDeploys(
   items: {
+    _id: Id<"items">;
     tipo: string;
     deployDate: string | null;
+    environment?: string | null;
+    relatedKind?: RelatedKind | null;
+    relatedTicket?: string | null;
     outcome?: "exitoso" | "no_exitoso" | "rollback" | null;
     userId: Id<"users">;
     ticket: string | null;
     name: string;
   }[],
+  people: { _id: Id<"users">; name: string }[],
   start: string,
   end: string,
 ) {
+  const ticketNames = ticketNameMap(items);
+  const personNames = new Map(people.map((person) => [person._id, person.name]));
   return items
     .filter((item) => item.tipo === "despliegue" && item.deployDate && item.deployDate >= start && item.deployDate <= end)
     .map((item) => ({
+      _id: item._id,
       userId: item.userId,
-      outcome: item.outcome ?? null,
+      personName: personNames.get(item.userId) ?? "",
+      outcome: normalizeOutcome(item.outcome) ?? "exitoso",
       deployDate: item.deployDate ?? "",
+      environment: item.environment ?? null,
       ticket: item.ticket,
       name: item.name,
-    }));
+      relatedKind: item.relatedKind ?? null,
+      relatedTicket: item.relatedTicket ?? null,
+      relatedName: item.relatedTicket ? (ticketNames.get(item.relatedTicket) ?? null) : null,
+    }))
+    .sort((a, b) => a.deployDate.localeCompare(b.deployDate) || (a.ticket ?? "").localeCompare(b.ticket ?? ""));
 }
 
 export const teamRange = query({

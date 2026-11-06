@@ -15,8 +15,8 @@ import {
   YAxis,
 } from "recharts";
 import { api } from "../../convex/_generated/api";
-import { cumulative, monthBounds, monthTitle, rangeProblem, type RangeGroup } from "../../convex/dates";
-import { TIPO_META, TIPO_ORDER } from "../../convex/domain";
+import { cumulative, longDate, monthBounds, monthTitle, rangeProblem, type RangeGroup } from "../../convex/dates";
+import { OUTCOME_LABEL, RELATED_LABEL, TIPO_META, TIPO_ORDER } from "../../convex/domain";
 import { ReportTools } from "../components/ReportTools";
 import { Button, Select } from "../components/ui";
 import { downloadExcel, downloadWord } from "../lib/exportReport";
@@ -209,13 +209,40 @@ export function TeamCharts({
     const capacityInitial = people.reduce((sum, person) => sum + person.availableHours, 0);
     const capacityTotal = people.reduce((sum, person) => sum + person.totalHours, 0);
     const executed = people.reduce((sum, person) => sum + person.executed, 0);
-    return { people, rows, byTipo, capacityInitial, capacityTotal, executed };
+    const deploys =
+      personId === "all"
+        ? report.deploys
+        : report.deploys.filter((deploy) => deploy.userId === personId);
+    const exitosos = deploys.filter((deploy) => deploy.outcome === "exitoso").length;
+    const noExitosos = deploys.filter((deploy) => deploy.outcome === "no_exitoso").length;
+    const byPerson = people
+      .map((person) => ({
+        person,
+        rows: rows.filter((row) => row.userId === person._id && row.total > 0),
+      }))
+      .filter((group) => group.rows.length > 0);
+    return {
+      people,
+      rows,
+      byPerson,
+      byTipo,
+      deploys,
+      exitosos,
+      noExitosos,
+      capacityInitial,
+      capacityTotal,
+      executed,
+    };
   }, [personId, report]);
 
   const capacityData = [
     { name: "Inicial", horas: view.capacityInitial, fill: "#e7c7b0" },
     { name: "Total", horas: view.capacityTotal, fill: "#b7c6ea" },
     { name: "Ejecutadas", horas: view.executed, fill: "#c4622d" },
+  ];
+  const deployChartData = [
+    { name: "Exitosos", cantidad: view.exitosos, fill: "#2f6f5e" },
+    { name: "No exitosos (rollback)", cantidad: view.noExitosos, fill: "#9f3d3d" },
   ];
   const stacked = report.weeks.map((week, index) => {
     const point: Record<string, string | number> = {
@@ -225,7 +252,7 @@ export function TeamCharts({
     for (const tipo of view.byTipo) point[tipo.label] = Math.round((tipo.weeks[index] ?? 0) * 100) / 100;
     return point;
   });
-    const peopleData = view.people.map((person) => ({
+  const peopleData = view.people.map((person) => ({
     name: person.name,
     Capacidad: person.totalHours,
     Jornada: person.regular,
@@ -234,7 +261,7 @@ export function TeamCharts({
 
   return (
     <div className="space-y-5">
-      {view.executed === 0 ? (
+      {view.executed === 0 && view.deploys.length === 0 ? (
         <div className="rounded-3xl border border-dashed border-line bg-card px-6 py-16 text-center">
           <h3 className="font-display text-3xl">Todavía no hay horas cargadas</h3>
           <p className="mt-2 text-sm text-ink-soft">{emptyHint}</p>
@@ -301,8 +328,116 @@ export function TeamCharts({
             </ResponsiveContainer>
           </ChartCard>
 
+          <section className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 className="font-display text-3xl">Despliegues</h3>
+                <p className="text-xs text-ink-soft">
+                  Discriminados entre exitosos y no exitosos (que requirieron rollback), con su PR, PPM, INC o SR/SD relacionado.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2 text-xs font-semibold">
+                <span className="rounded-full border border-line bg-card px-3 py-1.5">
+                  Total: {view.deploys.length}
+                </span>
+                <span className="rounded-full bg-[#2f6f5e]/15 px-3 py-1.5 text-[#2f6f5e]">
+                  Exitosos: {view.exitosos}
+                </span>
+                <span className="rounded-full bg-rose-50 px-3 py-1.5 text-rose-800">
+                  No exitosos (rollback): {view.noExitosos}
+                </span>
+              </div>
+            </div>
+
+            {view.deploys.length === 0 ? (
+              <div className="rounded-3xl border border-dashed border-line bg-card px-6 py-10 text-center text-sm text-ink-soft">
+                No hay despliegues registrados en este período.
+              </div>
+            ) : (
+              <div className="grid gap-4 lg:grid-cols-[22rem_minmax(0,1fr)]">
+                <ChartCard title="Resultado de despliegues">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={deployChartData} barCategoryGap="30%">
+                      <CartesianGrid vertical={false} stroke="var(--color-line)" />
+                      <XAxis dataKey="name" tickLine={false} axisLine={false} tick={{ fontSize: 11 }} />
+                      <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={32} />
+                      <Tooltip formatter={(value) => [`${value}`, "Despliegues"]} />
+                      <Bar dataKey="cantidad" radius={[8, 8, 0, 0]}>
+                        {deployChartData.map((entry) => (
+                          <Cell key={entry.name} fill={entry.fill} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </ChartCard>
+
+                <div className="overflow-auto rounded-3xl border border-line bg-card">
+                  <table className="w-full min-w-[640px] text-sm">
+                    <thead className="bg-paper text-left text-xs tracking-wide text-ink-soft uppercase">
+                      <tr>
+                        <th className="px-4 py-3">Cambio</th>
+                        <th className="px-4 py-3">Relacionado con</th>
+                        <th className="px-4 py-3">Ambiente</th>
+                        <th className="px-4 py-3">Fecha</th>
+                        <th className="px-4 py-3">Persona</th>
+                        <th className="px-4 py-3">Resultado</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {view.deploys.map((deploy) => {
+                        const isSuccess = deploy.outcome === "exitoso";
+                        return (
+                          <tr key={deploy._id} className="border-t border-line">
+                            <td className="px-4 py-3">
+                              <span className="font-semibold">{deploy.ticket ?? deploy.name}</span>
+                              {deploy.ticket && deploy.name !== deploy.ticket && (
+                                <span className="block text-xs text-ink-soft">{deploy.name}</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3">
+                              {deploy.relatedTicket ? (
+                                <>
+                                  <span className="font-semibold">{deploy.relatedTicket}</span>
+                                  <span className="block text-xs text-ink-soft">
+                                    {deploy.relatedName ??
+                                      (deploy.relatedKind ? RELATED_LABEL[deploy.relatedKind] : "")}
+                                  </span>
+                                </>
+                              ) : (
+                                <span className="text-ink-soft">–</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3">{deploy.environment ?? "–"}</td>
+                            <td className="px-4 py-3">{longDate(deploy.deployDate)}</td>
+                            <td className="px-4 py-3">{deploy.personName}</td>
+                            <td className="px-4 py-3">
+                              <span
+                                className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
+                                  isSuccess
+                                    ? "bg-[#2f6f5e]/15 text-[#2f6f5e]"
+                                    : "bg-rose-50 text-rose-800"
+                                }`}
+                              >
+                                {OUTCOME_LABEL[deploy.outcome]}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </section>
+
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <h3 className="font-display text-3xl">Detalle</h3>
+            <div>
+              <h3 className="font-display text-3xl">Detalle por persona</h3>
+              <p className="text-xs text-ink-soft">
+                Separado por cada integrante del equipo para leer las asignaciones sin mezclarlas.
+              </p>
+            </div>
             <div className="rounded-full bg-card p-1">
               {(
                 [
@@ -321,43 +456,95 @@ export function TeamCharts({
               ))}
             </div>
           </div>
-          <div className="overflow-auto rounded-3xl border border-line bg-card">
-            <table className="w-full min-w-[760px] text-sm">
-              <thead className="bg-paper text-left text-xs tracking-wide text-ink-soft uppercase">
-                <tr>
-                  <th className="px-4 py-3">Ítem</th>
-                  <th className="px-4 py-3">Asignación</th>
-                  <th className="px-4 py-3">Persona</th>
-                  {report.weeks.map((week, index) => (
-                    <th key={`${week.label}-${index}`} className="px-3 py-3" title={`Días ${week.start} a ${week.end}`}>
-                      {week.label || `S${week.n}`}
-                    </th>
-                  ))}
-                  <th className="px-4 py-3">Total</th>
-                </tr>
-              </thead>
-              <tbody>
-                {view.rows.map((row) => {
-                  const series = mode === "acumulado" ? cumulative(row.weeks) : row.weeks;
-                  return (
-                    <tr key={row.itemId} className="border-t border-line">
-                      <td className="px-4 py-3">
-                        <span className="font-semibold">{row.name}</span>
-                        {row.ticket && <span className="block text-xs text-ink-soft">{row.ticket}</span>}
-                      </td>
-                      <td className="px-4 py-3">{TIPO_META[row.tipo].asignacion}</td>
-                      <td className="px-4 py-3">{row.personName}</td>
-                      {series.map((hours, index) => (
-                        <td key={`${row.itemId}-${index}`} className="px-3 py-3 tabular-nums">
-                          {formatHours(hours, "")}
-                        </td>
-                      ))}
-                      <td className="px-4 py-3 font-semibold tabular-nums">{formatHours(row.total, "0")}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+
+          <div className="space-y-4">
+            {view.byPerson.map(({ person, rows: personRows }) => {
+              const personWeekTotals = report.weeks.map((_, index) =>
+                personRows.reduce((sum, row) => sum + (row.weeks[index] ?? 0), 0),
+              );
+              const footerSeries =
+                mode === "acumulado" ? cumulative(personWeekTotals) : personWeekTotals;
+              const personTotal = personRows.reduce((sum, row) => sum + row.total, 0);
+
+              return (
+                <article
+                  key={person._id}
+                  className="overflow-hidden rounded-3xl border border-line bg-card"
+                >
+                  <header className="flex flex-wrap items-center justify-between gap-2 border-b border-line bg-sheet-soft px-4 py-3">
+                    <div>
+                      <h4 className="font-display text-2xl leading-none">{person.name}</h4>
+                      <p className="mt-1 text-xs text-ink-soft">
+                        Jornada: {formatHours(person.regular, "0")} h
+                        {person.extra > 0 && ` · Extras: ${formatHours(person.extra, "0")} h`}
+                        {` · Capacidad: ${formatHours(person.totalHours, "0")} h`}
+                      </p>
+                    </div>
+                    <span className="rounded-full bg-inverse px-3 py-1 text-xs font-semibold text-on-inverse tabular-nums">
+                      Total: {formatHours(personTotal, "0")} h
+                    </span>
+                  </header>
+                  <div className="overflow-auto">
+                    <table className="w-full min-w-[700px] text-sm">
+                      <thead className="bg-paper text-left text-xs tracking-wide text-ink-soft uppercase">
+                        <tr>
+                          <th className="px-4 py-3">Ítem</th>
+                          <th className="px-4 py-3">Asignación</th>
+                          {report.weeks.map((week, index) => (
+                            <th
+                              key={`${week.label}-${index}`}
+                              className="px-3 py-3"
+                              title={`Días ${week.start} a ${week.end}`}
+                            >
+                              {week.label || `S${week.n}`}
+                            </th>
+                          ))}
+                          <th className="px-4 py-3">Total</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {personRows.map((row) => {
+                          const series = mode === "acumulado" ? cumulative(row.weeks) : row.weeks;
+                          const caption = rowCaption(row);
+                          return (
+                            <tr key={`${row.itemId}-${row.ticket ?? row.name}`} className="border-t border-line">
+                              <td className="px-4 py-3">
+                                <span className="font-semibold">{row.name}</span>
+                                {caption && (
+                                  <span className="block text-xs text-ink-soft">{caption}</span>
+                                )}
+                              </td>
+                              <td className="px-4 py-3">{TIPO_META[row.tipo].asignacion}</td>
+                              {series.map((hours, index) => (
+                                <td key={`${row.itemId}-${index}`} className="px-3 py-3 tabular-nums">
+                                  {formatHours(hours, "")}
+                                </td>
+                              ))}
+                              <td className="px-4 py-3 font-semibold tabular-nums">
+                                {formatHours(row.total, "0")}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                      <tfoot className="border-t border-line bg-sheet-head font-semibold">
+                        <tr>
+                          <td className="px-4 py-2.5" colSpan={2}>
+                            Total {person.name}
+                          </td>
+                          {footerSeries.map((hours, index) => (
+                            <td key={`total-${person._id}-${index}`} className="px-3 py-2.5 tabular-nums">
+                              {formatHours(hours, "0")}
+                            </td>
+                          ))}
+                          <td className="px-4 py-2.5 tabular-nums">{formatHours(personTotal, "0")}</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </article>
+              );
+            })}
           </div>
           <p className="text-xs text-ink-soft">
             {note ?? `S1 a S${report.weeks.length} van de lunes a domingo. El acumulado suma cada semana con las anteriores.`}
@@ -366,6 +553,21 @@ export function TeamCharts({
       )}
     </div>
   );
+}
+
+function rowCaption(row: TeamReport["rows"][number]) {
+  const parts: string[] = [];
+  if (row.ticket) parts.push(row.ticket);
+  if (row.relatedTicket) {
+    parts.push(
+      row.relatedName
+        ? `→ ${row.relatedTicket} (${row.relatedName})`
+        : `→ ${row.relatedTicket}`,
+    );
+  }
+  if (row.environment) parts.push(row.environment);
+  if (row.outcome) parts.push(OUTCOME_LABEL[row.outcome]);
+  return parts.join(" · ");
 }
 
 function ChartCard({
