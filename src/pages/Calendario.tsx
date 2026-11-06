@@ -2,7 +2,7 @@ import { useMutation, useQuery } from "convex/react";
 import { useState } from "react";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
-import { MONTHS, longDate } from "../../convex/dates";
+import { MONTHS, isWeekend, isoDate, longDate, weekdayIndex } from "../../convex/dates";
 import { Button, ConfirmDialog, Field, Modal, Select, TextInput } from "../components/ui";
 import { errorMessage } from "../lib/errors";
 import { countryName } from "../lib/format";
@@ -16,10 +16,12 @@ type HolidayEdit = {
 
 export function Calendario({
   year,
+  month,
   onToast,
   onError,
 }: {
   year: number;
+  month: number;
   onToast: (message: string) => void;
   onError: (message: string) => void;
 }) {
@@ -29,7 +31,7 @@ export function Calendario({
   const remove = useMutation(api.calendar.remove);
   const restore = useMutation(api.calendar.restoreOfficial);
   const [country, setCountry] = useState<"AR" | "CO">("AR");
-  const [date, setDate] = useState(`${year}-01-01`);
+  const [date, setDate] = useState(isoDate(year, month, 1));
   const [name, setName] = useState("");
   const [holidayCountry, setHolidayCountry] = useState<"AR" | "CO">("AR");
   const [editing, setEditing] = useState<HolidayEdit | null>(null);
@@ -53,7 +55,16 @@ export function Calendario({
     try {
       await add({ date, country: holidayCountry, name });
       setName("");
-      onToast("Feriado agregado.");
+      const [pickedYear, pickedMonth, pickedDay] = date.split("-").map(Number);
+      const weekend = isWeekend(weekdayIndex(pickedYear ?? year, pickedMonth ?? month, pickedDay ?? 1));
+      const monthName = MONTHS[(pickedMonth ?? month) - 1] ?? "";
+      if (holidayCountry === "CO") {
+        onToast("Feriado de Colombia agregado. No resta la jornada de Argentina.");
+      } else if (weekend) {
+        onToast(`Feriado agregado en ${monthName}. Cae en fin de semana, así que no resta horas.`);
+      } else {
+        onToast(`Feriado agregado. Resta un día de la jornada de ${monthName}.`);
+      }
     } catch (caught) {
       onError(errorMessage(caught));
     }
@@ -97,7 +108,7 @@ export function Calendario({
                     <span>
                       <strong>{longDate(holiday.date)}</strong> · {countryName(holiday.country)} · {holiday.name}
                       <span className="ml-2 text-xs text-ink-soft">
-                        {holiday.country === "CO" ? "informativo, no resta en Argentina" : holiday.source === "oficial" ? "oficial" : "cargado"}
+                        {impactLabel(holiday.date, holiday.country)}
                       </span>
                     </span>
                     <span className="flex shrink-0 gap-3">
@@ -252,4 +263,11 @@ function HolidayDialog({
       </form>
     </Modal>
   );
+}
+
+function impactLabel(date: string, country: "AR" | "CO") {
+  if (country === "CO") return "informativo, no resta en Argentina";
+  const [year, month, day] = date.split("-").map(Number);
+  if (isWeekend(weekdayIndex(year ?? 0, month ?? 1, day ?? 1))) return "fin de semana, no resta";
+  return "resta la jornada";
 }

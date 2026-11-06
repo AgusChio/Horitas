@@ -192,7 +192,9 @@ function Home() {
         {view === "graficos" && (
           <Graficos year={period.year} month={period.month} isAdmin={isAdmin} onToast={setToast} onError={setProblem} />
         )}
-        {view === "calendario" && <Calendario year={period.year} onToast={setToast} onError={setProblem} />}
+        {view === "calendario" && (
+          <Calendario year={period.year} month={period.month} onToast={setToast} onError={setProblem} />
+        )}
         {view === "equipo" && (
           <Equipo
             key={
