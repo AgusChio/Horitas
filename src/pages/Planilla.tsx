@@ -26,6 +26,17 @@ const WEEKDAY_NAMES = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"] as con
 type Board = NonNullable<FunctionReturnType<typeof api.board.get>>;
 type BoardItem = Board["items"][number];
 
+function showsInWeek(item: BoardItem, days: { date: string }[]) {
+  const first = days[0]?.date;
+  const last = days.at(-1)?.date;
+  if (!first || !last) return false;
+  if (item.tipo === "despliegue") {
+    return !item.deployDate || (item.deployDate >= first && item.deployDate <= last);
+  }
+  if (!item.endedOn) return true;
+  return first <= item.endedOn;
+}
+
 export function Planilla({
   year,
   month,
@@ -277,8 +288,9 @@ export function Planilla({
         <div className="space-y-4">
           {board.weeks.map((week, weekIndex) => {
             const days = board.days.filter((day) => day.week === week.n);
-            const weekHours = visible.reduce((sum, item) => sum + (item.weeks[weekIndex] ?? 0), 0);
-            const weekExtra = visible.reduce((sum, item) => sum + (item.extraWeeks[weekIndex] ?? 0), 0);
+            const weekItems = visible.filter((item) => showsInWeek(item, days));
+            const weekHours = weekItems.reduce((sum, item) => sum + (item.weeks[weekIndex] ?? 0), 0);
+            const weekExtra = weekItems.reduce((sum, item) => sum + (item.extraWeeks[weekIndex] ?? 0), 0);
             const notes = days.flatMap((day) => {
               const bits = [
                 day.holidayName ? `${day.day} · ${day.holidayName}` : null,
@@ -334,9 +346,7 @@ export function Planilla({
                       Total
                     </div>
 
-                    {visible
-                      .filter((item) => item.tipo !== "despliegue" || !item.deployDate || days.some((day) => day.date === item.deployDate))
-                      .map((item, rowIndex, weekItems) => (
+                    {weekItems.map((item, rowIndex) => (
                       <WeekRow
                         key={item._id}
                         item={item}
@@ -365,8 +375,8 @@ export function Planilla({
                       Total del día
                     </div>
                     {days.map((day) => {
-                      const total = visible.reduce((sum, item) => sum + (item.hours[day.day - 1] ?? 0), 0);
-                      const extra = visible.reduce((sum, item) => sum + (item.extras[day.day - 1] ?? 0), 0);
+                      const total = weekItems.reduce((sum, item) => sum + (item.hours[day.day - 1] ?? 0), 0);
+                      const extra = weekItems.reduce((sum, item) => sum + (item.extras[day.day - 1] ?? 0), 0);
                       const over = day.isWorkday ? total > board.hoursPerDay : total > 0;
                       return (
                         <div
@@ -995,7 +1005,7 @@ function ItemDialog({
         {canClose(tipo) && (
           <Field
             label="Terminado"
-            hint="Cuando lo cierres, poné el día. Desde el mes siguiente no aparece y no se le cargan más horas."
+            hint="Cuando lo cierres, poné el día. Desde la semana siguiente deja de aparecer, tampoco vuelve en los meses de después, y no se le cargan más horas."
           >
             <DateInput value={endedOn} onChange={setEndedOn} />
           </Field>
