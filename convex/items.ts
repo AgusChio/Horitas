@@ -121,6 +121,7 @@ export const create = mutation({
     relatedKind: v.optional(v.string()),
     relatedTicket: v.optional(v.string()),
     outcome: v.optional(v.string()),
+    urgency: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     await requireUser(ctx);
@@ -159,6 +160,7 @@ export const update = mutation({
     relatedKind: v.optional(v.string()),
     relatedTicket: v.optional(v.string()),
     outcome: v.optional(v.string()),
+    urgency: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     await requireUser(ctx);
@@ -326,6 +328,7 @@ export const copyPrevious = mutation({
         relatedKind: item.relatedKind ?? null,
         relatedTicket: item.relatedTicket ?? null,
         outcome: item.outcome ?? null,
+        urgency: item.urgency ?? null,
       });
     }
     return copied;

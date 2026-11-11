@@ -85,6 +85,7 @@ export default defineSchema({
     outcome: v.optional(
       v.union(v.literal("exitoso"), v.literal("no_exitoso"), v.literal("rollback"), v.null()),
     ),
+    urgency: v.optional(v.union(v.literal("urgente"), v.literal("normal"), v.null())),
     sortOrder: v.number(),
   })
     .index("by_user_period", ["userId", "year", "month"])

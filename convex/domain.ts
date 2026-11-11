@@ -66,6 +66,8 @@ export const RELATED_KINDS = ["requerimiento", "problema", "incidente", "service
 export type RelatedKind = (typeof RELATED_KINDS)[number];
 export const OUTCOMES = ["exitoso", "no_exitoso"] as const;
 export type Outcome = (typeof OUTCOMES)[number];
+export const URGENCIES = ["urgente", "normal"] as const;
+export type Urgency = (typeof URGENCIES)[number];
 export const DEPLOY_ENVIRONMENTS = ["QAM", "Producción"] as const;
 
 export const RELATED_LABEL: Record<RelatedKind, string> = {
@@ -81,6 +83,11 @@ export const OUTCOME_LABEL: Record<Outcome | "rollback", string> = {
   rollback: "No exitoso (rollback)",
 };
 
+export const URGENCY_LABEL: Record<Urgency, string> = {
+  urgente: "Urgente",
+  normal: "Normal",
+};
+
 export function normalizeOutcome(value: string | null | undefined): Outcome | null {
   if (value === "exitoso") return "exitoso";
   if (value === "no_exitoso" || value === "rollback") return "no_exitoso";
@@ -93,6 +100,15 @@ export function isRelatedKind(value: string): value is RelatedKind {
 
 export function isOutcome(value: string): value is Outcome {
   return (OUTCOMES as readonly string[]).includes(value);
+}
+
+export function isUrgency(value: string): value is Urgency {
+  return (URGENCIES as readonly string[]).includes(value);
+}
+
+export function normalizeUrgency(value: string | null | undefined): Urgency | null {
+  if (value === "urgente" || value === "normal") return value;
+  return null;
 }
 
 export function canClose(tipo: Tipo) {
@@ -131,6 +147,7 @@ export function normalizeItem(input: {
   relatedKind?: string | null;
   relatedTicket?: string | null;
   outcome?: string | null;
+  urgency?: string | null;
 }) {
   if (!isTipo(input.tipo)) throw new ConvexError("Elegí un tipo de ítem.");
   const tipo = input.tipo;
@@ -138,6 +155,7 @@ export function normalizeItem(input: {
   let relatedKind: RelatedKind | null = null;
   let relatedTicket: string | null = null;
   let outcome: Outcome | null = null;
+  let urgency: Urgency | null = null;
   let deployDate: string | null = null;
   let environment: string | null = null;
   let endedOn: string | null = null;
@@ -203,6 +221,11 @@ export function normalizeItem(input: {
     } else {
       throw new ConvexError("Indicá si el despliegue fue exitoso o no exitoso (rollback).");
     }
+    const pace = (input.urgency ?? "").trim();
+    if (!isUrgency(pace)) {
+      throw new ConvexError("Indicá si el cambio es urgente o normal.");
+    }
+    urgency = pace;
   } else if (tipo === "gestion" || tipo === "cierre" || tipo === "documentacion") {
     ticket = "";
   } else if (ticket && !/^[A-Z0-9-]{2,40}$/.test(ticket)) {
@@ -239,6 +262,7 @@ export function normalizeItem(input: {
     relatedKind,
     relatedTicket,
     outcome,
+    urgency,
   };
 }
 

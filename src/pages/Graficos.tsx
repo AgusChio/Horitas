@@ -16,7 +16,7 @@ import {
 } from "recharts";
 import { api } from "../../convex/_generated/api";
 import { cumulative, longDate, monthBounds, monthTitle, rangeProblem, type RangeGroup } from "../../convex/dates";
-import { OUTCOME_LABEL, RELATED_LABEL, TIPO_META, TIPO_ORDER } from "../../convex/domain";
+import { OUTCOME_LABEL, RELATED_LABEL, TIPO_META, TIPO_ORDER, URGENCY_LABEL } from "../../convex/domain";
 import { ReportTools } from "../components/ReportTools";
 import { Button, Select } from "../components/ui";
 import { downloadExcel, downloadWord } from "../lib/exportReport";
@@ -216,6 +216,8 @@ export function TeamCharts({
     const exitosos = deploys.filter((deploy) => deploy.outcome === "exitoso").length;
     const noExitosos = deploys.filter((deploy) => deploy.outcome === "no_exitoso").length;
     const pendientes = deploys.filter((deploy) => deploy.outcome === null).length;
+    const urgentes = deploys.filter((deploy) => deploy.urgency === "urgente").length;
+    const normales = deploys.filter((deploy) => deploy.urgency === "normal").length;
     const byPerson = people
       .map((person) => ({
         person,
@@ -231,6 +233,8 @@ export function TeamCharts({
       exitosos,
       noExitosos,
       pendientes,
+      urgentes,
+      normales,
       capacityInitial,
       capacityTotal,
       executed,
@@ -245,6 +249,10 @@ export function TeamCharts({
   const deployChartData = [
     { name: "Exitosos", cantidad: view.exitosos, fill: "#2f6f5e" },
     { name: "No exitosos (rollback)", cantidad: view.noExitosos, fill: "#9f3d3d" },
+  ];
+  const urgencyChartData = [
+    { name: "Urgentes", cantidad: view.urgentes, fill: "#c4622d" },
+    { name: "Normales", cantidad: view.normales, fill: "#3d7ea6" },
   ];
   const stacked = report.weeks.map((week, index) => {
     const point: Record<string, string | number> = {
@@ -335,7 +343,7 @@ export function TeamCharts({
               <div>
                 <h3 className="font-display text-3xl">Despliegues</h3>
                 <p className="text-xs text-ink-soft">
-                  Discriminados entre exitosos y no exitosos (que requirieron rollback), con su PR, PPM, INC o SR/SD relacionado.
+                  Discriminados entre exitosos y no exitosos (que requirieron rollback), y entre cambio urgente o normal.
                 </p>
               </div>
               <div className="flex flex-wrap gap-2 text-xs font-semibold">
@@ -353,6 +361,12 @@ export function TeamCharts({
                     Pendientes: {view.pendientes}
                   </span>
                 )}
+                <span className="rounded-full bg-[#c4622d]/15 px-3 py-1.5 text-[#c4622d]">
+                  Urgentes: {view.urgentes}
+                </span>
+                <span className="rounded-full bg-[#3d7ea6]/15 px-3 py-1.5 text-[#3d7ea6]">
+                  Normales: {view.normales}
+                </span>
               </div>
             </div>
 
@@ -361,7 +375,8 @@ export function TeamCharts({
                 No hay despliegues registrados en este período.
               </div>
             ) : (
-              <div className="grid gap-4 lg:grid-cols-[22rem_minmax(0,1fr)]">
+              <div className="space-y-4">
+              <div className="grid gap-4 lg:grid-cols-2">
                 <ChartCard title="Resultado de despliegues">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={deployChartData} barCategoryGap="30%">
@@ -377,6 +392,22 @@ export function TeamCharts({
                     </BarChart>
                   </ResponsiveContainer>
                 </ChartCard>
+                <ChartCard title="Tipo de cambio">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={urgencyChartData} barCategoryGap="30%">
+                      <CartesianGrid vertical={false} stroke="var(--color-line)" />
+                      <XAxis dataKey="name" tickLine={false} axisLine={false} tick={{ fontSize: 11 }} />
+                      <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={32} />
+                      <Tooltip formatter={(value) => [`${value}`, "Despliegues"]} />
+                      <Bar dataKey="cantidad" radius={[8, 8, 0, 0]}>
+                        {urgencyChartData.map((entry) => (
+                          <Cell key={entry.name} fill={entry.fill} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </ChartCard>
+              </div>
 
                 <div className="overflow-auto rounded-3xl border border-line bg-card">
                   <table className="w-full min-w-[640px] text-sm">
@@ -385,6 +416,7 @@ export function TeamCharts({
                         <th className="px-4 py-3">Cambio</th>
                         <th className="px-4 py-3">Relacionado con</th>
                         <th className="px-4 py-3">Ambiente</th>
+                        <th className="px-4 py-3">Tipo</th>
                         <th className="px-4 py-3">Fecha</th>
                         <th className="px-4 py-3">Persona</th>
                         <th className="px-4 py-3">Resultado</th>
@@ -415,6 +447,21 @@ export function TeamCharts({
                               )}
                             </td>
                             <td className="px-4 py-3">{deploy.environment ?? "–"}</td>
+                            <td className="px-4 py-3">
+                              {deploy.urgency ? (
+                                <span
+                                  className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
+                                    deploy.urgency === "urgente"
+                                      ? "bg-[#c4622d]/15 text-[#c4622d]"
+                                      : "bg-[#3d7ea6]/15 text-[#3d7ea6]"
+                                  }`}
+                                >
+                                  {URGENCY_LABEL[deploy.urgency]}
+                                </span>
+                              ) : (
+                                <span className="text-ink-soft">–</span>
+                              )}
+                            </td>
                             <td className="px-4 py-3">{longDate(deploy.deployDate)}</td>
                             <td className="px-4 py-3">{deploy.personName}</td>
                             <td className="px-4 py-3">
@@ -579,6 +626,7 @@ function rowCaption(row: TeamReport["rows"][number]) {
     );
   }
   if (row.environment) parts.push(row.environment);
+  if (row.urgency) parts.push(URGENCY_LABEL[row.urgency]);
   if (row.outcome) parts.push(OUTCOME_LABEL[row.outcome]);
   return parts.join(" · ");
 }

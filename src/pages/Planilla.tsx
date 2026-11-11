@@ -12,9 +12,12 @@ import {
   RELATED_LABEL,
   TIPO_META,
   TIPO_ORDER,
+  URGENCY_LABEL,
+  URGENCIES,
   type Outcome,
   type RelatedKind,
   type Tipo,
+  type Urgency,
 } from "../../convex/domain";
 import { longDate, monthBounds, monthTitle, scheduleSummary } from "../../convex/dates";
 import { Button, ConfirmDialog, DateInput, Field, Modal, Select, TextInput } from "../components/ui";
@@ -684,6 +687,7 @@ function itemCaption(item: BoardItem) {
   if (item.ticket) parts.push(item.ticket);
   if (item.tipo === "despliegue" && item.deployDate) parts.push(longDate(item.deployDate));
   if (item.environment) parts.push(item.environment);
+  if (item.urgency) parts.push(URGENCY_LABEL[item.urgency]);
   if (item.outcome) parts.push(OUTCOME_LABEL[item.outcome]);
   if (item.relatedTicket) {
     parts.push(item.relatedName ? `${item.relatedTicket} (${item.relatedName})` : item.relatedTicket);
@@ -711,6 +715,7 @@ type ItemDraft = {
   relatedKind: RelatedKind | "";
   relatedTicket: string;
   outcome: Outcome | "";
+  urgency: Urgency | "";
 };
 
 function draftKey(draft: ItemDraft) {
@@ -749,6 +754,7 @@ function ItemDialog({
     relatedKind: initial?.relatedKind ?? "",
     relatedTicket: initial?.relatedTicket ?? "",
     outcome: initial?.outcome ?? "",
+    urgency: initial?.urgency ?? "",
   });
   const [tipo, setTipo] = useState<Tipo>(opened.current.tipo);
   const [name, setName] = useState(opened.current.name);
@@ -760,6 +766,7 @@ function ItemDialog({
   const [relatedKind, setRelatedKind] = useState<RelatedKind | "">(opened.current.relatedKind);
   const [relatedTicket, setRelatedTicket] = useState(opened.current.relatedTicket);
   const [outcome, setOutcome] = useState<Outcome | "">(opened.current.outcome);
+  const [urgency, setUrgency] = useState<Urgency | "">(opened.current.urgency);
   const [askDelete, setAskDelete] = useState(false);
   const [askLeave, setAskLeave] = useState(false);
   const [pending, setPending] = useState(false);
@@ -776,6 +783,7 @@ function ItemDialog({
       relatedKind,
       relatedTicket,
       outcome,
+      urgency,
     }) !== draftKey(opened.current);
 
   function requestClose() {
@@ -798,6 +806,7 @@ function ItemDialog({
       relatedKind,
       relatedTicket,
       outcome,
+      urgency,
     };
     try {
       if (initial) await update({ itemId: initial._id, ...payload });
@@ -907,6 +916,16 @@ function ItemDialog({
                 />
               </Field>
             </div>
+            <Field label="Tipo de cambio" hint="Urgente o normal.">
+              <Select
+                value={urgency}
+                onChange={(value) => setUrgency(value as Urgency | "")}
+                options={[
+                  { value: "", label: "Urgente o normal" },
+                  ...URGENCIES.map((value) => ({ value, label: URGENCY_LABEL[value] })),
+                ]}
+              />
+            </Field>
             <Field label="Sale de">
               <Select
                 value={relatedKind}

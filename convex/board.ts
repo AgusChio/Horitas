@@ -23,11 +23,13 @@ import {
 import {
   closedBeforeMonth,
   normalizeOutcome,
+  normalizeUrgency,
   TIPO_ORDER,
   type Country,
   type Outcome,
   type RelatedKind,
   type Tipo,
+  type Urgency,
 } from "./domain";
 import { assertPeriod, displayName, getSettings, getUser } from "./lib";
 
@@ -231,6 +233,7 @@ export const get = query({
         relatedTicket: item.relatedTicket ?? null,
         relatedName: item.relatedTicket ? (ticketNames.get(item.relatedTicket) ?? null) : null,
         outcome: normalizeOutcome(item.outcome),
+        urgency: normalizeUrgency(item.urgency),
         hours: hours.map(round2),
         extras: extras.map(round2),
         extraTickets,
@@ -360,6 +363,7 @@ async function buildTeamMonth(ctx: QueryCtx, year: number, month: number) {
         environment: string | null;
         deployDate: string | null;
         outcome: Outcome | null;
+        urgency: Urgency | null;
         sortOrder: number;
         userId: Id<"users">;
         personName: string;
@@ -382,6 +386,7 @@ async function buildTeamMonth(ctx: QueryCtx, year: number, month: number) {
         environment: item.environment ?? null,
         deployDate: item.deployDate ?? null,
         outcome: normalizeOutcome(item.outcome),
+        urgency: normalizeUrgency(item.urgency),
         sortOrder: item.sortOrder,
         userId: item.userId,
         personName: owner.name,
@@ -633,6 +638,7 @@ async function buildTeamRange(ctx: QueryCtx, start: string, end: string, group: 
       environment: string | null;
       deployDate: string | null;
       outcome: Outcome | null;
+      urgency: Urgency | null;
       sortOrder: number;
       userId: Id<"users">;
       personName: string;
@@ -657,6 +663,7 @@ async function buildTeamRange(ctx: QueryCtx, start: string, end: string, group: 
       environment: item.environment ?? null,
       deployDate: item.deployDate ?? null,
       outcome: normalizeOutcome(item.outcome),
+      urgency: normalizeUrgency(item.urgency),
       sortOrder: item.sortOrder,
       userId: item.userId,
       personName: owner.name,
@@ -719,6 +726,7 @@ function listDeploys(
     relatedKind?: RelatedKind | null;
     relatedTicket?: string | null;
     outcome?: "exitoso" | "no_exitoso" | "rollback" | null;
+    urgency?: "urgente" | "normal" | null;
     userId: Id<"users">;
     ticket: string | null;
     name: string;
@@ -736,6 +744,7 @@ function listDeploys(
       userId: item.userId,
       personName: personNames.get(item.userId) ?? "",
       outcome: normalizeOutcome(item.outcome),
+      urgency: normalizeUrgency(item.urgency),
       deployDate: item.deployDate ?? "",
       environment: item.environment ?? null,
       ticket: item.ticket,

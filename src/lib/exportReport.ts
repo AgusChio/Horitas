@@ -22,9 +22,11 @@ import {
   RELATED_LABEL,
   TIPO_META,
   TIPO_ORDER,
+  URGENCY_LABEL,
   type Outcome,
   type RelatedKind,
   type Tipo,
+  type Urgency,
 } from "../../convex/domain";
 import { formatHours } from "./format";
 
@@ -47,6 +49,7 @@ type ItemRow = {
   relatedName?: string | null;
   environment?: string | null;
   outcome?: Outcome | null;
+  urgency?: Urgency | null;
   userId: string;
   personName: string;
   weeks: number[];
@@ -57,6 +60,7 @@ type DeployRow = {
   userId: string;
   personName: string;
   outcome: Outcome | null;
+  urgency: Urgency | null;
   deployDate: string;
   environment: string | null;
   ticket: string | null;
@@ -156,6 +160,8 @@ function sliceReport(report: ExportReport, personId: string) {
     exitosos: deploys.filter((deploy) => deploy.outcome === "exitoso").length,
     noExitosos: deploys.filter((deploy) => deploy.outcome === "no_exitoso").length,
     pendientes: deploys.filter((deploy) => deploy.outcome === null).length,
+    urgentes: deploys.filter((deploy) => deploy.urgency === "urgente").length,
+    normales: deploys.filter((deploy) => deploy.urgency === "normal").length,
     byTipo,
     capacityInitial: people.reduce((sum, person) => sum + person.availableHours, 0),
     capacityTotal: people.reduce((sum, person) => sum + person.totalHours, 0),
@@ -174,6 +180,7 @@ function rowSubtitle(row: ItemRow) {
     parts.push(row.relatedName ? `→ ${row.relatedTicket} (${row.relatedName})` : `→ ${row.relatedTicket}`);
   }
   if (row.environment) parts.push(row.environment);
+  if (row.urgency) parts.push(URGENCY_LABEL[row.urgency]);
   if (row.outcome) parts.push(OUTCOME_LABEL[row.outcome]);
   return parts.join(" · ");
 }
@@ -201,6 +208,12 @@ function outcomeStyle(outcome: Outcome | null) {
   if (outcome === "exitoso") return { label: OUTCOME_LABEL.exitoso, fill: C.greenSoft, ink: C.green };
   if (outcome === "no_exitoso") return { label: OUTCOME_LABEL.no_exitoso, fill: C.redSoft, ink: C.redInk };
   return { label: "Pendiente", fill: C.paper, ink: C.soft };
+}
+
+function urgencyStyle(urgency: Urgency | null) {
+  if (urgency === "urgente") return { label: URGENCY_LABEL.urgente, fill: "#f6e2d4", ink: C.copper };
+  if (urgency === "normal") return { label: URGENCY_LABEL.normal, fill: "#e4ebf6", ink: "#2c4a73" };
+  return { label: "Sin tipo", fill: C.paper, ink: C.soft };
 }
 
 /* ------------------------------------------------------------------ */
@@ -504,6 +517,10 @@ function buildCharts(view: View, weeks: Bucket[], bucketTitle: string) {
     { label: "No exitosos (rollback)", color: C.red, value: view.noExitosos },
   ];
   if (view.pendientes > 0) deployBars.push({ label: "Pendientes", color: C.pending, value: view.pendientes });
+  const urgencyBars = [
+    { label: "Urgentes", color: C.copper, value: view.urgentes },
+    { label: "Normales", color: "#3d7ea6", value: view.normales },
+  ];
   return {
     capacity: barChart(
       "Capacidad y ejecución",
@@ -543,6 +560,7 @@ function buildCharts(view: View, weeks: Bucket[], bucketTitle: string) {
       true,
     ),
     deploys: view.deploys.length > 0 ? barChart("Resultado de despliegues", DEPLOY.width, DEPLOY.height, deployBars, "") : null,
+    urgency: view.deploys.length > 0 ? barChart("Tipo de cambio", DEPLOY.width, DEPLOY.height, urgencyBars, "") : null,
   };
 }
 
@@ -678,7 +696,7 @@ function excelSummary(
     row,
     1,
     12,
-    "Discriminados entre exitosos y no exitosos (que requirieron rollback), con su PR, PPM, INC o SR/SD relacionado.",
+    "Discriminados entre exitosos y no exitosos (que requirieron rollback), y entre cambio urgente o normal.",
     { font: xFont({ size: 9, color: { argb: argb(C.soft) } }) },
   );
   row += 2;
@@ -699,9 +717,13 @@ function excelSummary(
     { label: `Exitosos: ${view.exitosos}`, fill: C.greenSoft, ink: C.green },
     { label: `No exitosos (rollback): ${view.noExitosos}`, fill: C.redSoft, ink: C.redInk },
     ...(view.pendientes > 0 ? [{ label: `Pendientes: ${view.pendientes}`, fill: C.paper, ink: C.soft }] : []),
+    { label: `Urgentes: ${view.urgentes}`, fill: "#f6e2d4", ink: C.copper },
+    { label: `Normales: ${view.normales}`, fill: "#e4ebf6", ink: "#2c4a73" },
   ];
   chips.forEach((chip, index) => {
-    const from = index * 3 + 1;
+    const from = (index % 4) * 3 + 1;
+    if (index === 4) row += 2;
+    if (index === 0 || index === 4) ws.getRow(row).height = 24;
     xBlock(ws, row, from, from + 2, chip.label, {
       fill: chip.fill,
       font: xFont({ bold: true, color: { argb: argb(chip.ink) } }),
@@ -709,16 +731,17 @@ function excelSummary(
       border: { top: xEdge(), bottom: xEdge(), left: xEdge(), right: xEdge() },
     });
   });
-  ws.getRow(row).height = 24;
   row += 2;
 
   xImage(book, ws, charts.deploys, 0, row - 1);
+  xImage(book, ws, charts.urgency, 6, row - 1);
   row += Math.ceil(DEPLOY.height / 20) + 1;
 
   const groups: [number, number, string][] = [
-    [1, 3, "Cambio"],
-    [4, 6, "Relacionado con"],
-    [7, 7, "Ambiente"],
+    [1, 2, "Cambio"],
+    [3, 4, "Relacionado con"],
+    [5, 6, "Ambiente"],
+    [7, 7, "Tipo"],
     [8, 9, "Fecha"],
     [10, 11, "Persona"],
     [12, 12, "Resultado"],
@@ -736,6 +759,7 @@ function excelSummary(
   for (const deploy of view.deploys) {
     const related = deployRelated(deploy);
     const result = outcomeStyle(deploy.outcome);
+    const pace = urgencyStyle(deploy.urgency);
     const cambioSub = deploy.ticket && deploy.name !== deploy.ticket ? deploy.name : "";
     const values: ExcelJS.CellValue[] = [
       rich(deploy.ticket ?? deploy.name, cambioSub),
@@ -744,8 +768,21 @@ function excelSummary(
       longDate(deploy.deployDate),
       deploy.personName,
     ];
-    groups.slice(0, 5).forEach(([from, to], index) => {
+    groups.slice(0, 3).forEach(([from, to], index) => {
       xBlock(ws, row, from, to, values[index] ?? "", {
+        fill: C.card,
+        align: { vertical: "middle", wrapText: true, indent: 1 },
+        border: { bottom: xEdge() },
+      });
+    });
+    xBlock(ws, row, 7, 7, pace.label, {
+      fill: pace.fill,
+      font: xFont({ bold: true, size: 9, color: { argb: argb(pace.ink) } }),
+      align: { horizontal: "center", vertical: "middle", wrapText: true },
+      border: { bottom: xEdge() },
+    });
+    groups.slice(4, 6).forEach(([from, to], index) => {
+      xBlock(ws, row, from, to, values[index + 3] ?? "", {
         fill: C.card,
         align: { vertical: "middle", wrapText: true, indent: 1 },
         border: { bottom: xEdge() },
@@ -1060,7 +1097,7 @@ function wChartRow(charts: ReturnType<typeof buildCharts>) {
 function wDeploys(view: View, charts: ReturnType<typeof buildCharts>) {
   const blocks: (Paragraph | Table)[] = [
     wHeading("Despliegues"),
-    wNote("Discriminados entre exitosos y no exitosos (que requirieron rollback), con su PR, PPM, INC o SR/SD relacionado."),
+    wNote("Discriminados entre exitosos y no exitosos (que requirieron rollback), y entre cambio urgente o normal."),
   ];
   if (view.deploys.length === 0) {
     blocks.push(
@@ -1091,12 +1128,30 @@ function wDeploys(view: View, charts: ReturnType<typeof buildCharts>) {
   if (view.pendientes > 0) {
     chips.push(wRun("   "), wRun(`  Pendientes: ${view.pendientes}  `, { bold: true, size: 16, color: C.soft, fill: C.paper }));
   }
+  chips.push(
+    wRun("   "),
+    wRun(`  Urgentes: ${view.urgentes}  `, { bold: true, size: 16, color: C.copper, fill: "#f6e2d4" }),
+    wRun("   "),
+    wRun(`  Normales: ${view.normales}  `, { bold: true, size: 16, color: "#2c4a73", fill: "#e4ebf6" }),
+  );
   blocks.push(wPara(chips, { after: 160 }));
-  blocks.push(wImage(charts.deploys, 440));
+  const half = Math.floor(PAGE_WIDTH / 2);
+  blocks.push(
+    wTable(
+      [half, PAGE_WIDTH - half],
+      [
+        new TableRow({
+          children: [charts.deploys, charts.urgency].map((chart, index) =>
+            wCell([wImage(chart, 300)], index === 0 ? half : PAGE_WIDTH - half, { margins: 40 }),
+          ),
+        }),
+      ],
+    ),
+  );
   blocks.push(wPara([], { after: 120 }));
 
-  const widths = [2700, 3100, 1400, 2400, 2200, 1880];
-  const headers = ["Cambio", "Relacionado con", "Ambiente", "Fecha", "Persona", "Resultado"];
+  const widths = [2200, 2500, 1300, 1400, 2100, 2100, 2080];
+  const headers = ["Cambio", "Relacionado con", "Ambiente", "Tipo", "Fecha", "Persona", "Resultado"];
   const headerRow = new TableRow({
     tableHeader: true,
     children: headers.map((label, index) =>
@@ -1109,6 +1164,7 @@ function wDeploys(view: View, charts: ReturnType<typeof buildCharts>) {
   const rows = view.deploys.map((deploy) => {
     const related = deployRelated(deploy);
     const result = outcomeStyle(deploy.outcome);
+    const pace = urgencyStyle(deploy.urgency);
     const cambioSub = deploy.ticket && deploy.name !== deploy.ticket ? deploy.name : "";
     const twoLines = (main: string, sub: string) => [
       wPara([wRun(main, { bold: true, size: 17 })]),
@@ -1119,12 +1175,17 @@ function wDeploys(view: View, charts: ReturnType<typeof buildCharts>) {
       children: [
         wCell(twoLines(deploy.ticket ?? deploy.name, cambioSub), widths[0] ?? 2700, { fill: C.card, borders: border }),
         wCell(twoLines(related.main, related.sub), widths[1] ?? 3100, { fill: C.card, borders: border }),
-        wCell([wPara([wRun(deploy.environment ?? "–", { size: 17 })])], widths[2] ?? 1400, { fill: C.card, borders: border }),
-        wCell([wPara([wRun(longDate(deploy.deployDate), { size: 17 })])], widths[3] ?? 2400, { fill: C.card, borders: border }),
-        wCell([wPara([wRun(deploy.personName, { size: 17 })])], widths[4] ?? 2200, { fill: C.card, borders: border }),
+        wCell([wPara([wRun(deploy.environment ?? "–", { size: 17 })])], widths[2] ?? 1300, { fill: C.card, borders: border }),
+        wCell(
+          [wPara([wRun(pace.label, { bold: true, size: 15, color: pace.ink })], { align: AlignmentType.CENTER })],
+          widths[3] ?? 1400,
+          { fill: pace.fill, borders: border },
+        ),
+        wCell([wPara([wRun(longDate(deploy.deployDate), { size: 17 })])], widths[4] ?? 2100, { fill: C.card, borders: border }),
+        wCell([wPara([wRun(deploy.personName, { size: 17 })])], widths[5] ?? 2100, { fill: C.card, borders: border }),
         wCell(
           [wPara([wRun(result.label, { bold: true, size: 15, color: result.ink })], { align: AlignmentType.CENTER })],
-          widths[5] ?? 1880,
+          widths[6] ?? 2080,
           { fill: result.fill, borders: border },
         ),
       ],
