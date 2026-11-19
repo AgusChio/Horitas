@@ -14,6 +14,8 @@
   --color-periwinkle: #b7c6ea;
   --color-moss: #2f6f5e;
   --color-holiday: #f6e2ac;
+  --color-holiday-ar: #c5dff6;
+  --color-holiday-co: #f6e2ac;
   --color-weekend: #e7eef6;
   --color-sheet: #fffdf8;
   --color-sheet-head: #f7f3ea;
@@ -35,6 +37,8 @@
   --color-periwinkle: #2c3a52;
   --color-moss: #8fcebb;
   --color-holiday: #4a3d22;
+  --color-holiday-ar: #1d3c56;
+  --color-holiday-co: #4a3d22;
   --color-weekend: #243044;
   --color-sheet: #1c222c;
   --color-sheet-head: #262d39;
@@ -55,6 +59,10 @@
 
 .dark .bg-rose-50 {
   background: #3f2228;
+}
+
+.bg-holiday-both {
+  background-image: linear-gradient(135deg, var(--color-holiday-ar) 50%, var(--color-holiday-co) 50%);
 }
 
 body {

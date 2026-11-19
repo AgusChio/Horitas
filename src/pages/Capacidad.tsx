@@ -88,7 +88,10 @@ export function Capacidad({
 
       <div className="grid gap-4 xl:grid-cols-[1fr_1fr_1.15fr]">
         {report.countries.map((country) => (
-          <article key={country.country} className="rounded-3xl border border-line bg-card p-4">
+          <article
+            key={country.country}
+            className={`rounded-3xl border border-line border-t-4 bg-card p-4 ${country.country === "CO" ? "border-t-holiday-co" : "border-t-holiday-ar"}`}
+          >
             <div className="flex items-center justify-between">
               <h3 className="font-display text-3xl">{countryName(country.country)}</h3>
               <span className="text-2xl" aria-hidden>

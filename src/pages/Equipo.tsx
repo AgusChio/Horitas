@@ -51,16 +51,69 @@ export function Equipo({
   const [domains, setDomains] = useState(settings?.allowedDomains ?? []);
   const [draft, setDraft] = useState("");
   const [allowAny, setAllowAny] = useState(settings?.allowAnyDomain ?? false);
+  const [savingDomains, setSavingDomains] = useState(false);
 
-  function addDomain() {
+  async function saveAccess(next: { domains: string[]; allowAny?: boolean; hours?: string }) {
+    const hours = Number(next.hours ?? hoursPerDay);
+    if (!Number.isFinite(hours) || hours < 1 || hours > 12) {
+      onError("La jornada tiene que estar entre 1 y 12 horas.");
+      return false;
+    }
+    await updateSettings({
+      hoursPerDay: hours,
+      allowedDomains: next.domains,
+      allowAnyDomain: next.allowAny ?? allowAny,
+    });
+    return true;
+  }
+
+  async function addDomain() {
     const next = draft.trim().toLowerCase().replace(/^@/, "");
-    if (!next) return;
+    if (!next || savingDomains) return;
     if (!/^[a-z0-9.-]+\.[a-z]{2,}$/.test(next)) {
       onError("Ese dominio no es válido. Usá algo como empresa.com, sin el @.");
       return;
     }
-    setDomains((current) => (current.includes(next) ? current : [...current, next]));
+    const nextDomains = domains.includes(next) ? domains : [...domains, next];
+    setDomains(nextDomains);
     setDraft("");
+    if (domains.includes(next)) return;
+    setSavingDomains(true);
+    try {
+      const saved = await saveAccess({ domains: nextDomains });
+      if (!saved) {
+        setDomains(domains);
+        setDraft(next);
+        return;
+      }
+      onToast("Dominio guardado.");
+    } catch (error) {
+      setDomains(domains);
+      setDraft(next);
+      onError(errorMessage(error));
+    } finally {
+      setSavingDomains(false);
+    }
+  }
+
+  async function removeDomain(domain: string) {
+    if (savingDomains) return;
+    const nextDomains = domains.filter((item) => item !== domain);
+    setDomains(nextDomains);
+    setSavingDomains(true);
+    try {
+      const saved = await saveAccess({ domains: nextDomains });
+      if (!saved) {
+        setDomains(domains);
+        return;
+      }
+      onToast("Dominio quitado.");
+    } catch (error) {
+      setDomains(domains);
+      onError(errorMessage(error));
+    } finally {
+      setSavingDomains(false);
+    }
   }
 
   return (
@@ -106,17 +159,18 @@ export function Equipo({
           event.preventDefault();
           if (!isAdmin) return;
           const pending = draft.trim().toLowerCase().replace(/^@/, "");
-          const allowedDomains = pending && !domains.includes(pending) ? [...domains, pending] : domains;
           if (pending && !/^[a-z0-9.-]+\.[a-z]{2,}$/.test(pending)) {
             onError("Ese dominio no es válido. Usá algo como empresa.com, sin el @.");
             return;
           }
-          void updateSettings({
-            hoursPerDay: Number(hoursPerDay),
-            allowedDomains,
-            allowAnyDomain: allowAny,
-          })
-            .then(() => onToast("La configuración quedó guardada."))
+          const allowedDomains = pending && !domains.includes(pending) ? [...domains, pending] : domains;
+          void saveAccess({ domains: allowedDomains, allowAny, hours: hoursPerDay })
+            .then((saved) => {
+              if (!saved) return;
+              setDomains(allowedDomains);
+              setDraft("");
+              onToast("La configuración quedó guardada.");
+            })
             .catch((error) => onError(errorMessage(error)));
         }}
       >
@@ -134,7 +188,7 @@ export function Equipo({
         </Field>
         <Field
           label="Dominios corporativos"
-          hint="Podés agregar varios. Quien se registre con uno de estos mails entra al equipo. Quien ya tiene cuenta sigue entrando."
+          hint="Al agregarlo queda guardado. Quien se registre con uno de estos mails entra al equipo. Quien ya tiene cuenta sigue entrando."
         >
           <div className="flex gap-2">
             <TextInput
@@ -149,7 +203,7 @@ export function Equipo({
               placeholder="empresa.com"
               aria-label="Nuevo dominio"
             />
-            <Button type="button" variant="ghost" disabled={!isAdmin || draft.trim() === ""} onClick={addDomain}>
+            <Button type="button" variant="ghost" disabled={!isAdmin || savingDomains || draft.trim() === ""} onClick={() => void addDomain()}>
               Agregar
             </Button>
           </div>
@@ -164,7 +218,7 @@ export function Equipo({
                     type="button"
                     className="text-base leading-none text-ink-soft"
                     aria-label={`Quitar ${domain}`}
-                    onClick={() => setDomains((current) => current.filter((item) => item !== domain))}
+                    onClick={() => void removeDomain(domain)}
                   >
                     ×
                   </button>
@@ -183,7 +237,7 @@ export function Equipo({
           />
           <span>Permitir cualquier mail, no solo el corporativo.</span>
         </label>
-        {!allowAny && (settings?.allowedDomains.length ?? 0) === 0 && (
+        {!allowAny && domains.length === 0 && (
           <p className="rounded-2xl bg-peach/50 px-3 py-2 text-sm leading-6">
             Todavía no hay un dominio habilitado. Hasta que lo cargues, nadie más puede crear una cuenta.
           </p>

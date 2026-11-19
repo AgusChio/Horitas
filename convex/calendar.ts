@@ -23,7 +23,7 @@ export const list = query({
   args: { year: v.number() },
   handler: async (ctx, args) => {
     const user = await getUser(ctx);
-    if (!user || user.active === false) return [];
+    if (!user || user.active === false || user.role === "viewer") return [];
     const prefix = `${args.year}-`;
     const holidays = await ctx.db.query("holidays").collect();
     return holidays

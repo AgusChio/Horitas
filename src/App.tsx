@@ -223,10 +223,10 @@ function Home() {
         {view === "graficos" && (
           <Graficos year={period.year} month={period.month} isAdmin={isAdmin} onToast={setToast} onError={setProblem} />
         )}
-        {view === "calendario" && (
+        {view === "calendario" && !readOnly && (
           <Calendario year={period.year} month={period.month} onToast={setToast} onError={setProblem} />
         )}
-        {view === "equipo" && (
+        {view === "equipo" && !readOnly && (
           <Equipo
             key={
               team.settings

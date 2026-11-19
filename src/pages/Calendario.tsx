@@ -104,7 +104,10 @@ export function Calendario({
               <h3 className="font-display text-2xl capitalize">{group.month}</h3>
               <ul className="mt-2 divide-y divide-line">
                 {group.items.map((holiday) => (
-                  <li key={holiday._id} className="flex items-center justify-between gap-3 py-2 text-sm">
+                  <li
+                    key={holiday._id}
+                    className={`flex items-center justify-between gap-3 rounded-xl px-2 py-2 text-sm ${holiday.country === "CO" ? "bg-holiday-co" : "bg-holiday-ar"}`}
+                  >
                     <span>
                       <strong>{longDate(holiday.date)}</strong> · {countryName(holiday.country)} · {holiday.name}
                       <span className="ml-2 text-xs text-ink-soft">

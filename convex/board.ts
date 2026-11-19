@@ -159,9 +159,9 @@ export const get = query({
     const person = data.users.find((user) => user._id === args.userId);
     if (!person) return null;
     const country: Country = person.country === "CO" ? "CO" : "AR";
-    const holidays = holidayMap(data.holidays, args.year, args.month, country);
-    const colombia =
-      country === "AR" ? holidayMap(data.holidays, args.year, args.month, "CO") : new Map<string, string>();
+    const argentina = holidayMap(data.holidays, args.year, args.month, "AR");
+    const colombia = holidayMap(data.holidays, args.year, args.month, "CO");
+    const holidays = country === "CO" ? colombia : argentina;
     const absences = data.absences.filter((absence) => absence.userId === person._id);
     const schedule = resolveSchedule(person, data.hoursPerDay);
     const capacity = personCapacity({
@@ -258,7 +258,8 @@ export const get = query({
         isWeekend: isWeekend(dow),
         isWorkday: schedule.workdays.includes(dow) && !holidays.has(date),
         holidayName: holidays.get(date) ?? null,
-        infoHoliday: colombia.get(date) ?? null,
+        argentinaHoliday: argentina.get(date) ?? null,
+        colombiaHoliday: colombia.get(date) ?? null,
         absence: absence
           ? { reason: absence.reason, discountsCapacity: absence.discountsCapacity }
           : null,
@@ -295,11 +296,10 @@ export const get = query({
 
 function countsInTeam(
   users: { _id: Id<"users">; role?: "admin" | "member" | "viewer" }[],
-  person: { _id: Id<"users">; executed: number; discountHours: number; absenceDetails: unknown[] },
+  person: { _id: Id<"users"> },
 ) {
   const user = users.find((item) => item._id === person._id);
-  if (user?.role !== "viewer") return true;
-  return person.executed > 0 || person.discountHours > 0 || person.absenceDetails.length > 0;
+  return user?.role !== "viewer";
 }
 
 async function buildTeamMonth(ctx: QueryCtx, year: number, month: number) {

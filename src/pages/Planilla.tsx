@@ -312,8 +312,8 @@ export function Planilla({
             const weekExtra = weekItems.reduce((sum, item) => sum + (item.extraWeeks[weekIndex] ?? 0), 0);
             const notes = days.flatMap((day) => {
               const bits = [
-                day.holidayName ? `${day.day} · ${day.holidayName}` : null,
-                day.infoHoliday ? `${day.day} · Colombia: ${day.infoHoliday}` : null,
+                day.argentinaHoliday ? `${day.day} · Argentina: ${day.argentinaHoliday}` : null,
+                day.colombiaHoliday ? `${day.day} · Colombia: ${day.colombiaHoliday}` : null,
                 day.absence ? `${day.day} · Ausencia: ${day.absence.reason}` : null,
               ];
               return bits.filter((bit): bit is string => Boolean(bit));
@@ -356,8 +356,11 @@ export function Planilla({
                         <span className={`text-base leading-none font-semibold tabular-nums ${day.absence ? "text-rose-800" : ""}`}>
                           {day.day}
                         </span>
-                        {day.infoHoliday && !day.holidayName && (
-                          <span className="text-[9px] font-semibold tracking-wide text-ink-soft">CO</span>
+                        {(day.argentinaHoliday || day.colombiaHoliday) && (
+                          <span className="flex gap-1 text-[9px] font-semibold tracking-wide">
+                            {day.argentinaHoliday && <span>AR</span>}
+                            {day.colombiaHoliday && <span>CO</span>}
+                          </span>
                         )}
                       </div>
                     ))}
@@ -435,10 +438,14 @@ export function Planilla({
           Fin de semana
         </li>
         <li className="flex items-center gap-2">
-          <span className="h-3.5 w-3.5 rounded bg-holiday" />
-          Feriado
+          <span className="h-3.5 w-3.5 rounded bg-holiday-ar" />
+          Feriado de Argentina
         </li>
-        <li>CO en el día: feriado en Colombia, solo para saberlo. No resta la jornada argentina.</li>
+        <li className="flex items-center gap-2">
+          <span className="h-3.5 w-3.5 rounded bg-holiday-co" />
+          Feriado de Colombia
+        </li>
+        <li>Solo resta la jornada el feriado de tu país. El del otro país se marca para saberlo.</li>
         <li className="flex items-center gap-2">
           <span className="h-3.5 w-3.5 rounded bg-sheet shadow-[inset_0_0_0_2px_var(--color-copper)]" />
           Despliegue
@@ -490,15 +497,18 @@ function weekColumns(count: number) {
 }
 
 function dayTone(day: BoardDay) {
-  if (day.holidayName) return "bg-holiday";
+  if (day.argentinaHoliday && day.colombiaHoliday) return "bg-holiday-both";
+  if (day.argentinaHoliday) return "bg-holiday-ar";
+  if (day.colombiaHoliday) return "bg-holiday-co";
   if (day.isWeekend) return "bg-weekend";
   return "bg-sheet";
 }
 
 function columnTitle(day: BoardDay) {
   return [
-    day.holidayName,
-    day.infoHoliday ? `En Colombia: ${day.infoHoliday}. No resta la jornada.` : null,
+    day.argentinaHoliday ? `Argentina: ${day.argentinaHoliday}` : null,
+    day.colombiaHoliday ? `Colombia: ${day.colombiaHoliday}` : null,
+    day.holidayName ? `Resta la jornada: ${day.holidayName}` : null,
     day.absence
       ? `Ausencia: ${day.absence.reason}${day.absence.discountsCapacity ? " (resta capacidad)" : ""}`
       : null,
