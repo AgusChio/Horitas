@@ -3,7 +3,7 @@ import type { MutationCtx } from "./_generated/server";
 import { mutation, query } from "./_generated/server";
 import { isIsoDate } from "./dates";
 import { HOLIDAYS } from "./holidaysData";
-import { getUser, requireUser } from "./lib";
+import { getUser, requireEditor } from "./lib";
 
 export async function insertMissingHolidays(ctx: MutationCtx) {
   const existing = await ctx.db.query("holidays").collect();
@@ -39,7 +39,7 @@ export const add = mutation({
     name: v.string(),
   },
   handler: async (ctx, args) => {
-    await requireUser(ctx);
+    await requireEditor(ctx);
     if (!isIsoDate(args.date)) throw new ConvexError("Esa fecha no es válida.");
     const name = args.name.trim().replace(/\s+/g, " ");
     if (name.length < 3) throw new ConvexError("Poné el nombre del feriado.");
@@ -67,7 +67,7 @@ export const update = mutation({
     name: v.string(),
   },
   handler: async (ctx, args) => {
-    await requireUser(ctx);
+    await requireEditor(ctx);
     const holiday = await ctx.db.get(args.holidayId);
     if (!holiday) throw new ConvexError("Ese feriado ya no está.");
     if (!isIsoDate(args.date)) throw new ConvexError("Esa fecha no es válida.");
@@ -91,7 +91,7 @@ export const update = mutation({
 export const remove = mutation({
   args: { holidayId: v.id("holidays") },
   handler: async (ctx, args) => {
-    await requireUser(ctx);
+    await requireEditor(ctx);
     const holiday = await ctx.db.get(args.holidayId);
     if (!holiday) throw new ConvexError("Ese feriado ya no está.");
     await ctx.db.delete(args.holidayId);
@@ -101,7 +101,7 @@ export const remove = mutation({
 export const restoreOfficial = mutation({
   args: {},
   handler: async (ctx) => {
-    await requireUser(ctx);
+    await requireEditor(ctx);
     return await insertMissingHolidays(ctx);
   },
 });
@@ -114,7 +114,7 @@ export const addAbsence = mutation({
     discountsCapacity: v.boolean(),
   },
   handler: async (ctx, args) => {
-    await requireUser(ctx);
+    await requireEditor(ctx);
     if (!isIsoDate(args.date)) throw new ConvexError("Esa fecha no es válida.");
     const person = await ctx.db.get(args.userId);
     if (!person || person.active === false) throw new ConvexError("No encontré a esa persona.");
@@ -148,7 +148,7 @@ export const updateAbsence = mutation({
     discountsCapacity: v.boolean(),
   },
   handler: async (ctx, args) => {
-    await requireUser(ctx);
+    await requireEditor(ctx);
     const absence = await ctx.db.get(args.absenceId);
     if (!absence) throw new ConvexError("Esa ausencia ya no está.");
     if (!isIsoDate(args.date)) throw new ConvexError("Esa fecha no es válida.");
@@ -172,7 +172,7 @@ export const updateAbsence = mutation({
 export const removeAbsence = mutation({
   args: { absenceId: v.id("absences") },
   handler: async (ctx, args) => {
-    await requireUser(ctx);
+    await requireEditor(ctx);
     const absence = await ctx.db.get(args.absenceId);
     if (!absence) throw new ConvexError("Esa ausencia ya no está.");
     await ctx.db.delete(args.absenceId);

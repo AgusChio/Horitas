@@ -74,6 +74,12 @@ function Home() {
   }, [me?._id, me?.theme]);
 
   useEffect(() => {
+    if (!me || me.role !== "viewer") return;
+    if (view === "planilla" || view === "capacidad" || view === "graficos") return;
+    setView("planilla");
+  }, [me, view]);
+
+  useEffect(() => {
     if (!toast) return;
     const timer = window.setTimeout(() => setToast(null), 4200);
     return () => window.clearTimeout(timer);
@@ -102,15 +108,19 @@ function Home() {
   }
   if (!team) return <Splash />;
 
-  const selected =
-    team.people.find((person) => person._id === picked && person.active) ??
-    team.people.find((person) => person._id === me._id && person.active) ??
-    team.people.find((person) => person.active);
-  const userId = selected?._id;
   const isAdmin = me.role === "admin";
+  const readOnly = me.role === "viewer";
   const needsDomain = isAdmin && team.settings && !team.settings.allowAnyDomain && team.settings.allowedDomains.length === 0;
+  const views = VIEWS.filter(
+    (item) => !readOnly || item.id === "planilla" || item.id === "capacidad" || item.id === "graficos",
+  );
 
-  const people = team.people.filter((person) => person.active);
+  const people = team.people.filter((person) => person.active && person.role !== "viewer");
+  const selected =
+    people.find((person) => person._id === picked) ??
+    people.find((person) => person._id === me._id) ??
+    people[0];
+  const userId = selected?._id;
 
   return (
     <div className="min-h-screen">
@@ -164,7 +174,7 @@ function Home() {
           )}
         </div>
         <nav className="mx-auto mt-3 hidden max-w-[1400px] gap-1 md:flex" aria-label="Secciones">
-          {VIEWS.map((item) => (
+          {views.map((item) => (
             <button
               key={item.id}
               type="button"
@@ -193,12 +203,22 @@ function Home() {
             year={period.year}
             month={period.month}
             userId={userId as Id<"users">}
+            readOnly={readOnly}
             onToast={setToast}
             onError={setProblem}
           />
         )}
+        {view === "planilla" && !userId && (
+          <p className="text-sm text-ink-soft">Todavía no hay integrantes con planilla.</p>
+        )}
         {view === "capacidad" && (
-          <Capacidad year={period.year} month={period.month} onToast={setToast} onError={setProblem} />
+          <Capacidad
+            year={period.year}
+            month={period.month}
+            readOnly={readOnly}
+            onToast={setToast}
+            onError={setProblem}
+          />
         )}
         {view === "graficos" && (
           <Graficos year={period.year} month={period.month} isAdmin={isAdmin} onToast={setToast} onError={setProblem} />
@@ -227,8 +247,8 @@ function Home() {
         style={{ paddingBottom: "max(0.35rem, env(safe-area-inset-bottom))" }}
         aria-label="Secciones"
       >
-        <div className="grid grid-cols-5">
-          {VIEWS.map((item) => {
+        <div className={`grid ${views.length === 3 ? "grid-cols-3" : "grid-cols-5"}`}>
+          {views.map((item) => {
             const current = view === item.id;
             return (
               <button

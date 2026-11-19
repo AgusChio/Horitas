@@ -4,7 +4,9 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import {
+  allocationTipo,
   canClose,
+  nestWithParent,
   DEPLOY_ENVIRONMENTS,
   OUTCOME_LABEL,
   OUTCOMES,
@@ -44,12 +46,14 @@ export function Planilla({
   year,
   month,
   userId,
+  readOnly = false,
   onToast,
   onError,
 }: {
   year: number;
   month: number;
   userId: Id<"users">;
+  readOnly?: boolean;
   onToast: (message: string) => void;
   onError: (message: string) => void;
 }) {
@@ -162,7 +166,9 @@ export function Planilla({
         .filter((item): item is BoardItem => Boolean(item))
         .concat(board.items.filter((item) => !orderOverride.includes(item._id)))
     : board.items;
-  const visible = orderedItems.filter((item) => filter === "todos" || item.tipo === filter);
+  const visible = orderedItems.filter(
+    (item) => filter === "todos" || item.tipo === filter || (item.tipo === "despliegue" && allocationTipo(item) === filter),
+  );
   const ratio = board.capacity.totalHours
     ? Math.min(100, Math.round((board.executed / board.capacity.totalHours) * 100))
     : 0;
@@ -203,42 +209,48 @@ export function Planilla({
       </div>
 
       <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-        <Button
-          type="button"
-          className="h-10 w-full gap-1.5 sm:w-auto"
-          onClick={() => setDialog({ mode: "create", tipo: "requerimiento" })}
-        >
-          <PlusIcon />
-          Agregar ítem
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          className="h-10 w-full sm:w-auto"
-          onClick={() =>
-            void run(
-              () => startMonth({ userId, year, month }),
-              "Este mes ya tiene ítems.",
-              "Quedaron cargados los incidentes y las reuniones.",
-            )
-          }
-        >
-          Empezar el mes
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          className="h-10 w-full sm:w-auto"
-          onClick={() =>
-            void run(
-              () => copyPrevious({ userId, year, month }),
-              "El mes anterior no tiene ítems nuevos.",
-              "Se copiaron los ítems del mes anterior.",
-            )
-          }
-        >
-          Copiar mes anterior
-        </Button>
+        {readOnly ? (
+          <p className="text-sm text-ink-soft">Solo lectura. Podés mirar la planilla del equipo.</p>
+        ) : (
+          <>
+            <Button
+              type="button"
+              className="h-10 w-full gap-1.5 sm:w-auto"
+              onClick={() => setDialog({ mode: "create", tipo: "requerimiento" })}
+            >
+              <PlusIcon />
+              Agregar ítem
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              className="h-10 w-full sm:w-auto"
+              onClick={() =>
+                void run(
+                  () => startMonth({ userId, year, month }),
+                  "Este mes ya tiene ítems.",
+                  "Quedaron cargados los incidentes y las reuniones.",
+                )
+              }
+            >
+              Empezar el mes
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              className="h-10 w-full sm:w-auto"
+              onClick={() =>
+                void run(
+                  () => copyPrevious({ userId, year, month }),
+                  "El mes anterior no tiene ítems nuevos.",
+                  "Se copiaron los ítems del mes anterior.",
+                )
+              }
+            >
+              Copiar mes anterior
+            </Button>
+          </>
+        )}
         <div className="flex rounded-full border border-line bg-card p-1">
           {(
             [
@@ -275,7 +287,9 @@ export function Planilla({
       </div>
       {entryKind === "extra" && (
         <p className="mb-3 rounded-2xl bg-peach/70 px-3 py-2 text-sm">
-          Estás cargando horas extras. Se suman al ítem y no descuentan la capacidad de la jornada.
+          {readOnly
+            ? "Horas extras. Se suman al ítem y no descuentan la capacidad de la jornada."
+            : "Estás cargando horas extras. Se suman al ítem y no descuentan la capacidad de la jornada."}
         </p>
       )}
 
@@ -283,8 +297,9 @@ export function Planilla({
         <div className="rounded-3xl border border-dashed border-line bg-card px-6 py-14 text-center">
           <h3 className="font-display text-3xl">Este mes está vacío</h3>
           <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-ink-soft">
-            Empezá con incidentes y reuniones, copiá los ítems del mes anterior o cargá un PR, un PPM o un
-            despliegue.
+            {readOnly
+              ? "Cuando el equipo cargue ítems, vas a verlos acá."
+              : "Empezá con incidentes y reuniones, copiá los ítems del mes anterior o cargá un PR, un PPM o un despliegue."}
           </p>
         </div>
       ) : (
@@ -292,6 +307,7 @@ export function Planilla({
           {board.weeks.map((week, weekIndex) => {
             const days = board.days.filter((day) => day.week === week.n);
             const weekItems = visible.filter((item) => showsInWeek(item, days));
+            const weekRows = nestWithParent(weekItems);
             const weekHours = weekItems.reduce((sum, item) => sum + (item.weeks[weekIndex] ?? 0), 0);
             const weekExtra = weekItems.reduce((sum, item) => sum + (item.extraWeeks[weekIndex] ?? 0), 0);
             const notes = days.flatMap((day) => {
@@ -349,15 +365,17 @@ export function Planilla({
                       Total
                     </div>
 
-                    {weekItems.map((item, rowIndex) => (
+                    {weekRows.map(({ row: item, nested }, rowIndex) => (
                       <WeekRow
                         key={item._id}
                         item={item}
                         days={days}
                         weekIndex={weekIndex}
                         rowIndex={rowIndex}
-                        rowCount={weekItems.length}
+                        rowCount={weekRows.length}
                         isDragging={dragState?.itemId === item._id}
+                        readOnly={readOnly}
+                        nested={nested}
                         onDragStart={(event) => {
                           if (event.button !== 0 && event.pointerType === "mouse") return;
                           event.preventDefault();
@@ -426,9 +444,10 @@ export function Planilla({
           Despliegue
         </li>
         <li>Lo que pasa de la jornada de {formatHours(board.hoursPerDay, "0")} h, o cae en un día que no trabajás, queda en rojo.</li>
+        <li>Un cambio de un PPM, un PR o un SD queda debajo de ese ticket. Esas horas se suman ahí, como despliegue.</li>
       </ul>
 
-      {dialog && (
+      {dialog && !readOnly && (
         <ItemDialog
           year={year}
           month={month}
@@ -496,6 +515,8 @@ function WeekRow({
   rowIndex,
   rowCount,
   isDragging,
+  readOnly,
+  nested,
   kind,
   onDragStart,
   onEdit,
@@ -508,6 +529,8 @@ function WeekRow({
   rowIndex: number;
   rowCount: number;
   isDragging: boolean;
+  readOnly: boolean;
+  nested: boolean;
   kind: "regular" | "extra";
   onDragStart: (event: React.PointerEvent) => void;
   onEdit: () => void;
@@ -520,23 +543,32 @@ function WeekRow({
   return (
     <>
       <div
-        data-item-id={item._id}
-        className={`flex min-w-0 items-center gap-2 border-r border-b border-sheet-line px-2.5 py-2 ${isDragging ? "bg-peach/45" : "bg-sheet"}`}
+        data-item-id={nested ? undefined : item._id}
+        className={`flex min-w-0 items-center gap-2 border-r border-b border-sheet-line py-2 ${nested ? "pr-2.5 pl-7" : "px-2.5"} ${isDragging ? "bg-peach/45" : "bg-sheet"}`}
       >
-        <button
-          type="button"
-          aria-label={`Mover ${item.name}`}
-          title="Mantené apretado y arrastrá para cambiar el orden"
-          onPointerDown={onDragStart}
-          className="grid h-8 w-7 shrink-0 cursor-grab touch-none place-items-center rounded-lg text-ink-soft select-none hover:bg-paper hover:text-ink active:cursor-grabbing"
-        >
-          <GripIcon />
-        </button>
+        {!readOnly && !nested && (
+          <button
+            type="button"
+            aria-label={`Mover ${item.name}`}
+            title="Mantené apretado y arrastrá para cambiar el orden"
+            onPointerDown={onDragStart}
+            className="grid h-8 w-7 shrink-0 cursor-grab touch-none place-items-center rounded-lg text-ink-soft select-none hover:bg-paper hover:text-ink active:cursor-grabbing"
+          >
+            <GripIcon />
+          </button>
+        )}
         <span className="h-8 w-1 shrink-0 rounded-full" style={{ background: meta.dot }} />
-        <button type="button" className="min-w-0 flex-1 text-left" onClick={onEdit} title={item.notes ?? "Editar ítem"}>
-          <span className="block truncate text-sm font-semibold">{item.name}</span>
-          <span className="block truncate text-xs text-ink-soft">{itemCaption(item)}</span>
-        </button>
+        {readOnly ? (
+          <div className="min-w-0 flex-1 text-left" title={item.notes ?? undefined}>
+            <span className="block truncate text-sm font-semibold">{nested ? `↳ ${item.name}` : item.name}</span>
+            <span className="block truncate text-xs text-ink-soft">{itemCaption(item, nested)}</span>
+          </div>
+        ) : (
+          <button type="button" className="min-w-0 flex-1 text-left" onClick={onEdit} title={item.notes ?? "Editar ítem"}>
+            <span className="block truncate text-sm font-semibold">{nested ? `↳ ${item.name}` : item.name}</span>
+            <span className="block truncate text-xs text-ink-soft">{itemCaption(item, nested)}</span>
+          </button>
+        )}
       </div>
       {days.map((day, colIndex) => {
         const value = values[day.day - 1] ?? 0;
@@ -559,6 +591,7 @@ function WeekRow({
                     ? "Terminado: no se cargan horas después de esa fecha"
                     : undefined
               }
+              readOnly={readOnly}
               onCommit={(hours) => onCommit(day.date, hours)}
               onInvalid={onInvalid}
             />
@@ -583,6 +616,7 @@ function HourCell({
   marked,
   locked,
   lockTitle,
+  readOnly,
   onCommit,
   onInvalid,
 }: {
@@ -596,6 +630,7 @@ function HourCell({
   marked: boolean;
   locked: boolean;
   lockTitle?: string;
+  readOnly: boolean;
   onCommit: (hours: number) => Promise<unknown>;
   onInvalid: () => void;
 }) {
@@ -609,16 +644,21 @@ function HourCell({
       data-col={col}
       value={draft ?? hoursToInput(value)}
       disabled={locked}
-      title={locked ? lockTitle : undefined}
+      readOnly={readOnly}
+      title={locked ? lockTitle : readOnly ? "Solo lectura" : undefined}
       inputMode="decimal"
       onFocus={(event) => {
         setDraft(hoursToInput(value));
         event.currentTarget.select();
       }}
-      onChange={(event) => setDraft(event.target.value)}
+      onChange={(event) => {
+        if (readOnly) return;
+        setDraft(event.target.value);
+      }}
       onBlur={(event) => {
         const raw = event.currentTarget.value;
         setDraft(null);
+        if (readOnly) return;
         const parsed = parseHours(raw);
         if (!Number.isFinite(parsed) || parsed < 0 || parsed > 24) {
           onInvalid();
@@ -640,7 +680,7 @@ function HourCell({
         event.preventDefault();
         focusHour(week, row + delta[0], col + delta[1], rowCount);
       }}
-      className={`hour-input ${value > 0 ? "font-semibold" : ""} ${extra ? "is-extra" : ""} ${marked ? "is-deploy" : ""} ${locked ? "cursor-not-allowed opacity-45" : ""}`}
+      className={`hour-input ${value > 0 ? "font-semibold" : ""} ${extra ? "is-extra" : ""} ${marked ? "is-deploy" : ""} ${locked ? "cursor-not-allowed opacity-45" : ""} ${readOnly ? "cursor-default" : ""}`}
     />
   );
 }
@@ -682,7 +722,16 @@ function saveHours(
   return setHours({ itemId, date, hours, kind }).catch((error: unknown) => onError(errorMessage(error)));
 }
 
-function itemCaption(item: BoardItem) {
+function itemCaption(item: BoardItem, nested = false) {
+  if (nested && item.tipo === "despliegue") {
+    const parts = ["Despliegue"];
+    if (item.ticket) parts.push(item.ticket);
+    if (item.deployDate) parts.push(longDate(item.deployDate));
+    if (item.environment) parts.push(item.environment);
+    if (item.urgency) parts.push(URGENCY_LABEL[item.urgency]);
+    if (item.outcome) parts.push(OUTCOME_LABEL[item.outcome]);
+    return parts.join(" · ");
+  }
   const parts = [TIPO_META[item.tipo].asignacion];
   if (item.ticket) parts.push(item.ticket);
   if (item.tipo === "despliegue" && item.deployDate) parts.push(longDate(item.deployDate));
@@ -692,7 +741,9 @@ function itemCaption(item: BoardItem) {
   if (item.relatedTicket) {
     parts.push(item.relatedName ? `${item.relatedTicket} (${item.relatedName})` : item.relatedTicket);
   }
-  if (item.endedOn) parts.push(`terminado el ${longDate(item.endedOn)}`);
+  if (item.endedOn) {
+    parts.push(`${item.tipo === "documentacion" ? "fin" : "terminado"} el ${longDate(item.endedOn)}`);
+  }
   return parts.join(" · ");
 }
 
@@ -821,7 +872,11 @@ function ItemDialog({
   return (
     <Modal
       title={initial ? "Editar ítem" : "Nuevo ítem"}
-      subtitle={`${meta.label} · se suma en ${meta.asignacion}`}
+      subtitle={
+        tipo === "despliegue"
+          ? "Despliegue · las horas se suman al PPM, PR o SD, como subítem"
+          : `${meta.label} · se suma en ${meta.asignacion}`
+      }
       onClose={requestClose}
     >
       <form onSubmit={onSubmit} className="space-y-4">
@@ -946,7 +1001,7 @@ function ItemDialog({
                       ? "Ticket de service request (SR / SD)"
                       : "Ticket de requerimiento"
               }
-              hint="El despliegue queda relacionado con ese PR, PPM, INC o SR/SD."
+              hint="Esas horas se suman a ese PPM, PR o SD, como un subítem de despliegue."
             >
               <TextInput
                 value={relatedTicket}
@@ -1023,8 +1078,12 @@ function ItemDialog({
         )}
         {canClose(tipo) && (
           <Field
-            label="Terminado"
-            hint="Cuando lo cierres, poné el día. Desde la semana siguiente deja de aparecer, tampoco vuelve en los meses de después, y no se le cargan más horas."
+            label={tipo === "documentacion" ? "Fecha fin" : "Terminado"}
+            hint={
+              tipo === "documentacion"
+                ? "Cuando termines el documento, poné el día. Desde la semana siguiente deja de aparecer y no se le cargan más horas."
+                : "Cuando lo cierres, poné el día. Desde la semana siguiente deja de aparecer, tampoco vuelve en los meses de después, y no se le cargan más horas."
+            }
           >
             <DateInput value={endedOn} onChange={setEndedOn} />
           </Field>

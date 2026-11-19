@@ -22,7 +22,7 @@ type Person = {
   name: string;
   email: string;
   country: "AR" | "CO" | null;
-  role: "admin" | "member";
+  role: "admin" | "member" | "viewer";
   active: boolean;
   hoursPerDay: number | null;
   workdays: number[] | null;
@@ -70,7 +70,8 @@ export function Equipo({
           <h2 className="font-display text-4xl leading-none">Equipo</h2>
           <p className="mt-2 text-sm leading-6 text-ink-soft">
             Cada persona entra con su mail y una contraseña. El país define qué feriados le restan
-            capacidad.
+            capacidad. Quien tiene el rol Lectura sigue en el equipo y puede mirar la planilla, la
+            capacidad y los gráficos, sin modificarlos.
           </p>
         </div>
         <ScheduleCard
@@ -334,7 +335,7 @@ function PersonRow({
     userId: Id<"users">;
     name: string;
     country: "AR" | "CO";
-    role: "admin" | "member";
+    role: "admin" | "member" | "viewer";
     active: boolean;
   }) => Promise<void>;
 }) {
@@ -370,9 +371,10 @@ function PersonRow({
         <Select
           value={role}
           disabled={!isAdmin}
-          onChange={(value) => setRole(value as "admin" | "member")}
+          onChange={(value) => setRole(value as "admin" | "member" | "viewer")}
           options={[
             { value: "member", label: "Integrante" },
+            { value: "viewer", label: "Lectura" },
             { value: "admin", label: "Administra" },
           ]}
         />

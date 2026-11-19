@@ -17,11 +17,13 @@ const BARS = [
 export function Capacidad({
   year,
   month,
+  readOnly = false,
   onToast,
   onError,
 }: {
   year: number;
   month: number;
+  readOnly?: boolean;
   onToast: (message: string) => void;
   onError: (message: string) => void;
 }) {
@@ -80,6 +82,7 @@ export function Capacidad({
           {monthTitle(year, month)}. La capacidad usa los días y las horas de jornada de cada persona, y resta
           los feriados de su país. En Argentina, los de Colombia se listan aparte y no entran en la cuenta.
           La jornada base del equipo es de {report.hoursPerDay} h.
+          {readOnly && " Estás viendo la capacidad del equipo, sin modificarla."}
         </p>
       </div>
 
@@ -198,7 +201,7 @@ export function Capacidad({
         </table>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[1fr_1fr]">
+      <div className={readOnly ? "" : "grid gap-4 lg:grid-cols-[1fr_1fr]"}>
         <article className="rounded-3xl border border-line bg-card p-4">
           <h3 className="font-display text-3xl">Detalle de ausencias</h3>
           <ul className="mt-3 space-y-2 text-sm">
@@ -212,23 +215,26 @@ export function Capacidad({
                     {absence.appliedHours > 0 ? ` · resta ${absence.appliedHours} h` : " · no resta capacidad"}
                   </span>
                 </span>
-                <span className="flex shrink-0 gap-3">
-                  <button type="button" className="text-xs font-semibold" onClick={() => setEditing(absence)}>
-                    Editar
-                  </button>
-                  <button
-                    type="button"
-                    className="text-xs font-semibold text-rose-800"
-                    onClick={() => setRemoving(absence)}
-                  >
-                    Quitar
-                  </button>
-                </span>
+                {!readOnly && (
+                  <span className="flex shrink-0 gap-3">
+                    <button type="button" className="text-xs font-semibold" onClick={() => setEditing(absence)}>
+                      Editar
+                    </button>
+                    <button
+                      type="button"
+                      className="text-xs font-semibold text-rose-800"
+                      onClick={() => setRemoving(absence)}
+                    >
+                      Quitar
+                    </button>
+                  </span>
+                )}
               </li>
             ))}
           </ul>
         </article>
 
+        {!readOnly && (
         <form onSubmit={onSubmit} className="space-y-3 rounded-3xl border border-line bg-card p-4">
           <h3 className="font-display text-3xl">Cargar ausencia</h3>
           <Field label="Persona">
@@ -272,8 +278,9 @@ export function Capacidad({
           </label>
           <Button type="submit">Guardar ausencia</Button>
         </form>
+        )}
       </div>
-      {editing && (
+      {!readOnly && editing && (
         <AbsenceDialog
           absence={editing}
           year={year}
@@ -287,7 +294,7 @@ export function Capacidad({
           onSave={(value) => updateAbsence({ absenceId: editing._id, ...value })}
         />
       )}
-      {removing && (
+      {!readOnly && removing && (
         <ConfirmDialog
           title="Quitar ausencia"
           body={`Se quita la ausencia de ${removing.personName} del ${longDate(removing.date)}.`}

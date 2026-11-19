@@ -23,6 +23,18 @@ export function assertAdmin(user: Doc<"users">) {
   }
 }
 
+export function assertCanEdit(user: Doc<"users">) {
+  if (user.role === "viewer") {
+    throw new ConvexError("Con el rol de lectura solo se puede mirar.");
+  }
+}
+
+export async function requireEditor(ctx: QueryCtx | MutationCtx) {
+  const user = await requireUser(ctx);
+  assertCanEdit(user);
+  return user;
+}
+
 export async function getSettings(ctx: QueryCtx | MutationCtx) {
   return await ctx.db
     .query("settings")

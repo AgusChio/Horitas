@@ -1,7 +1,8 @@
 import { ConvexError, v } from "convex/values";
 import { mutation, query, type MutationCtx } from "./_generated/server";
+import { roleValidator } from "./schema";
 import { insertMissingHolidays } from "./calendar";
-import { assertAdmin, displayName, getSettings, getUser, requireUser } from "./lib";
+import { assertAdmin, displayName, getSettings, getUser, requireEditor, requireUser } from "./lib";
 
 function cleanDomains(values: string[]) {
   const tokens = values
@@ -136,7 +137,7 @@ export const updateSchedule = mutation({
     workdays: v.array(v.number()),
   },
   handler: async (ctx, args) => {
-    const actor = await requireUser(ctx);
+    const actor = await requireEditor(ctx);
     const person = await ctx.db.get(args.userId);
     if (!person) throw new ConvexError("No encontré a esa persona.");
     if (actor._id !== person._id) assertAdmin(actor);
@@ -157,11 +158,11 @@ export const updateMember = mutation({
     userId: v.id("users"),
     name: v.string(),
     country: v.union(v.literal("AR"), v.literal("CO")),
-    role: v.union(v.literal("admin"), v.literal("member")),
+    role: roleValidator,
     active: v.boolean(),
   },
   handler: async (ctx, args) => {
-    const actor = await requireUser(ctx);
+    const actor = await requireEditor(ctx);
     const person = await ctx.db.get(args.userId);
     if (!person) throw new ConvexError("No encontré a esa persona.");
     const editingSelf = actor._id === person._id;

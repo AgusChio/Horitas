@@ -16,7 +16,7 @@ import {
 } from "recharts";
 import { api } from "../../convex/_generated/api";
 import { cumulative, longDate, monthBounds, monthTitle, rangeProblem, type RangeGroup } from "../../convex/dates";
-import { OUTCOME_LABEL, RELATED_LABEL, TIPO_META, TIPO_ORDER, URGENCY_LABEL } from "../../convex/domain";
+import { allocationTipo, OUTCOME_LABEL, RELATED_LABEL, rowsToShow, TIPO_META, TIPO_ORDER, URGENCY_LABEL } from "../../convex/domain";
 import { ReportTools } from "../components/ReportTools";
 import { Button, Select } from "../components/ui";
 import { downloadExcel, downloadWord } from "../lib/exportReport";
@@ -194,7 +194,7 @@ export function TeamCharts({
     const people = personId === "all" ? report.people : report.people.filter((person) => person._id === personId);
     const rows = personId === "all" ? report.rows : report.rows.filter((row) => row.userId === personId);
     const byTipo = TIPO_ORDER.map((tipo) => {
-      const matching = rows.filter((row) => row.tipo === tipo);
+      const matching = rows.filter((row) => allocationTipo(row) === tipo);
       const weeks = report.weeks.map((_, index) =>
         matching.reduce((sum, row) => sum + (row.weeks[index] ?? 0), 0),
       );
@@ -221,9 +221,9 @@ export function TeamCharts({
     const byPerson = people
       .map((person) => ({
         person,
-        rows: rows.filter((row) => row.userId === person._id && row.total > 0),
+        rows: rows.filter((row) => row.userId === person._id),
       }))
-      .filter((group) => group.rows.length > 0);
+      .filter((group) => group.rows.some((row) => row.total > 0));
     return {
       people,
       rows,
@@ -519,12 +519,13 @@ export function TeamCharts({
 
           <div className="space-y-4">
             {view.byPerson.map(({ person, rows: personRows }) => {
+              const shown = rowsToShow(personRows);
               const personWeekTotals = report.weeks.map((_, index) =>
-                personRows.reduce((sum, row) => sum + (row.weeks[index] ?? 0), 0),
+                shown.reduce((sum, item) => sum + (item.row.weeks[index] ?? 0), 0),
               );
               const footerSeries =
                 mode === "acumulado" ? cumulative(personWeekTotals) : personWeekTotals;
-              const personTotal = personRows.reduce((sum, row) => sum + row.total, 0);
+              const personTotal = shown.reduce((sum, item) => sum + item.row.total, 0);
 
               return (
                 <article
@@ -563,18 +564,19 @@ export function TeamCharts({
                         </tr>
                       </thead>
                       <tbody>
-                        {personRows.map((row) => {
+                        {shown.map(({ row, nested }) => {
                           const series = mode === "acumulado" ? cumulative(row.weeks) : row.weeks;
-                          const caption = rowCaption(row);
+                          const caption = rowCaption(row, nested);
+                          const assigned = TIPO_META[allocationTipo(row)];
                           return (
                             <tr key={`${row.itemId}-${row.ticket ?? row.name}`} className="border-t border-line">
-                              <td className="px-4 py-3">
-                                <span className="font-semibold">{row.name}</span>
+                              <td className={`py-3 ${nested ? "pr-4 pl-8" : "px-4"}`}>
+                                <span className="font-semibold">{nested ? `↳ ${row.name}` : row.name}</span>
                                 {caption && (
                                   <span className="block text-xs text-ink-soft">{caption}</span>
                                 )}
                               </td>
-                              <td className="px-4 py-3">{TIPO_META[row.tipo].asignacion}</td>
+                              <td className="px-4 py-3">{assigned.asignacion}</td>
                               {series.map((hours, index) => (
                                 <td key={`${row.itemId}-${index}`} className="px-3 py-3 tabular-nums">
                                   {formatHours(hours, "")}
@@ -615,7 +617,20 @@ export function TeamCharts({
   );
 }
 
-function rowCaption(row: TeamReport["rows"][number]) {
+function rowCaption(row: TeamReport["rows"][number], nested = false) {
+  if (row.tipo === "despliegue") {
+    const parts = ["Despliegue"];
+    if (row.ticket) parts.push(row.ticket);
+    if (!nested && row.relatedTicket) {
+      parts.push(
+        row.relatedName ? `subítem de ${row.relatedTicket} (${row.relatedName})` : `subítem de ${row.relatedTicket}`,
+      );
+    }
+    if (row.environment) parts.push(row.environment);
+    if (row.urgency) parts.push(URGENCY_LABEL[row.urgency]);
+    if (row.outcome) parts.push(OUTCOME_LABEL[row.outcome]);
+    return parts.join(" · ");
+  }
   const parts: string[] = [];
   if (row.ticket) parts.push(row.ticket);
   if (row.relatedTicket) {

@@ -3,9 +3,9 @@ import { mutation } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import { isIsoDate, shiftMonth } from "./dates";
-import { closedBeforeMonth, normalizeItem, roundHours, sameItem, TIPO_ORDER, type Tipo } from "./domain";
+import { canClose, closedBeforeMonth, normalizeItem, roundHours, sameItem, TIPO_ORDER, type Tipo } from "./domain";
 import { tipoValidator } from "./schema";
-import { assertPeriod, requireUser } from "./lib";
+import { assertPeriod, requireEditor } from "./lib";
 
 function assertDeployInMonth(tipo: string, deployDate: string | null, year: number, month: number) {
   if (tipo !== "despliegue" || !deployDate) return;
@@ -21,7 +21,7 @@ async function syncClosure(
   identity: { tipo: Tipo; name: string; ticket: string | null },
   endedOn: string | null,
 ) {
-  if (identity.tipo !== "problema" && identity.tipo !== "requerimiento" && identity.tipo !== "bandeja") return;
+  if (!canClose(identity.tipo)) return;
   const all = await ctx.db.query("items").collect();
   for (const item of all) {
     if (item.userId !== userId || !sameItem(item, identity)) continue;
@@ -51,7 +51,7 @@ export const setHours = mutation({
     extraTicket: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    await requireUser(ctx);
+    await requireEditor(ctx);
     if (!isIsoDate(args.date)) throw new ConvexError("Esa fecha no es válida.");
     const item = await ctx.db.get(args.itemId);
     if (!item) throw new ConvexError("Ese ítem ya no está.");
@@ -124,7 +124,7 @@ export const create = mutation({
     urgency: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    await requireUser(ctx);
+    await requireEditor(ctx);
     assertPeriod(args.year, args.month);
     const person = await ctx.db.get(args.userId);
     if (!person || person.active === false) throw new ConvexError("No encontré a esa persona.");
@@ -163,7 +163,7 @@ export const update = mutation({
     urgency: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    await requireUser(ctx);
+    await requireEditor(ctx);
     const item = await ctx.db.get(args.itemId);
     if (!item) throw new ConvexError("Ese ítem ya no está.");
     const normalized = normalizeItem(args);
@@ -189,7 +189,7 @@ export const update = mutation({
 export const remove = mutation({
   args: { itemId: v.id("items") },
   handler: async (ctx, args) => {
-    await requireUser(ctx);
+    await requireEditor(ctx);
     const item = await ctx.db.get(args.itemId);
     if (!item) return;
     const entries = await ctx.db
@@ -204,7 +204,7 @@ export const remove = mutation({
 export const move = mutation({
   args: { itemId: v.id("items"), direction: v.union(v.literal("up"), v.literal("down")) },
   handler: async (ctx, args) => {
-    await requireUser(ctx);
+    await requireEditor(ctx);
     const item = await ctx.db.get(args.itemId);
     if (!item) return;
     const current = await itemsFor(ctx, item.userId, item.year, item.month);
@@ -236,7 +236,7 @@ export const reorder = mutation({
     itemIds: v.array(v.id("items")),
   },
   handler: async (ctx, args) => {
-    await requireUser(ctx);
+    await requireEditor(ctx);
     assertPeriod(args.year, args.month);
     const current = await itemsFor(ctx, args.userId, args.year, args.month);
     const sorted = current.sort(
@@ -267,7 +267,7 @@ export const reorder = mutation({
 export const startMonth = mutation({
   args: { userId: v.id("users"), year: v.number(), month: v.number() },
   handler: async (ctx, args) => {
-    await requireUser(ctx);
+    await requireEditor(ctx);
     assertPeriod(args.year, args.month);
     const person = await ctx.db.get(args.userId);
     if (!person || person.active === false) throw new ConvexError("No encontré a esa persona.");
@@ -293,7 +293,7 @@ export const startMonth = mutation({
 export const copyPrevious = mutation({
   args: { userId: v.id("users"), year: v.number(), month: v.number() },
   handler: async (ctx, args) => {
-    await requireUser(ctx);
+    await requireEditor(ctx);
     assertPeriod(args.year, args.month);
     const previous = shiftMonth(args.year, args.month, -1);
     const source = await itemsFor(ctx, args.userId, previous.year, previous.month);

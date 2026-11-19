@@ -4,6 +4,8 @@ import { v } from "convex/values";
 
 export const countryValidator = v.union(v.literal("AR"), v.literal("CO"));
 
+export const roleValidator = v.union(v.literal("admin"), v.literal("member"), v.literal("viewer"));
+
 export const tipoValidator = v.union(
   v.literal("bandeja"),
   v.literal("gestion"),
@@ -25,7 +27,7 @@ export default defineSchema({
     phoneVerificationTime: v.optional(v.number()),
     isAnonymous: v.optional(v.boolean()),
     country: v.optional(countryValidator),
-    role: v.optional(v.union(v.literal("admin"), v.literal("member"))),
+    role: v.optional(roleValidator),
     active: v.optional(v.boolean()),
     theme: v.optional(v.union(v.literal("light"), v.literal("dark"))),
     hoursPerDay: v.optional(v.number()),

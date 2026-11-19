@@ -18,8 +18,10 @@ import {
 import ExcelJS from "exceljs";
 import { cumulative, longDate } from "../../convex/dates";
 import {
+  allocationTipo,
   OUTCOME_LABEL,
   RELATED_LABEL,
+  rowsToShow,
   TIPO_META,
   TIPO_ORDER,
   URGENCY_LABEL,
@@ -136,7 +138,7 @@ function sliceReport(report: ExportReport, personId: string) {
   const rows = personId === "all" ? report.rows : report.rows.filter((row) => ids.has(row.userId));
   const deploys = (report.deploys ?? []).filter((deploy) => personId === "all" || ids.has(deploy.userId));
   const byTipo = TIPO_ORDER.map((tipo) => {
-    const matching = rows.filter((row) => row.tipo === tipo);
+    const matching = rows.filter((row) => allocationTipo(row) === tipo);
     const weeks = report.weeks.map((_, index) => matching.reduce((sum, row) => sum + (row.weeks[index] ?? 0), 0));
     return {
       tipo,
@@ -149,9 +151,9 @@ function sliceReport(report: ExportReport, personId: string) {
   const byPerson = people
     .map((person) => ({
       person,
-      rows: rows.filter((row) => row.userId === person._id && row.total > 0),
+      rows: rows.filter((row) => row.userId === person._id),
     }))
-    .filter((group) => group.rows.length > 0);
+    .filter((group) => group.rows.some((row) => row.total > 0));
   return {
     people,
     rows,
@@ -173,7 +175,18 @@ function sliceReport(report: ExportReport, personId: string) {
 
 type View = ReturnType<typeof sliceReport>;
 
-function rowSubtitle(row: ItemRow) {
+function rowSubtitle(row: ItemRow, nested = false) {
+  if (row.tipo === "despliegue") {
+    const parts = ["Despliegue"];
+    if (row.ticket) parts.push(row.ticket);
+    if (!nested && row.relatedTicket) {
+      parts.push(row.relatedName ? `subítem de ${row.relatedTicket} (${row.relatedName})` : `subítem de ${row.relatedTicket}`);
+    }
+    if (row.environment) parts.push(row.environment);
+    if (row.urgency) parts.push(URGENCY_LABEL[row.urgency]);
+    if (row.outcome) parts.push(OUTCOME_LABEL[row.outcome]);
+    return parts.join(" · ");
+  }
   const parts: string[] = [];
   if (row.ticket) parts.push(row.ticket);
   if (row.relatedTicket) {
@@ -824,7 +837,8 @@ function excelDetail(book: ExcelJS.Workbook, view: View, weeks: Bucket[], mode: 
 
   let row = 4;
   for (const { person, rows } of view.byPerson) {
-    const total = rows.reduce((sum, item) => sum + item.total, 0);
+    const shown = rowsToShow(rows);
+    const total = shown.reduce((sum, item) => sum + item.row.total, 0);
     const edge = xEdge();
     xBlock(ws, row, 1, last - 1, person.name, {
       fill: C.sheetSoft,
@@ -862,10 +876,10 @@ function excelDetail(book: ExcelJS.Workbook, view: View, weeks: Bucket[], mode: 
     ws.getRow(row).height = 22;
     row += 1;
 
-    for (const item of rows) {
-      const meta = TIPO_META[item.tipo];
-      const subtitle = rowSubtitle(item);
-      xBlock(ws, row, 1, 1, rich(item.name, subtitle), {
+    for (const { row: item, nested } of shown) {
+      const meta = TIPO_META[allocationTipo(item)];
+      const subtitle = rowSubtitle(item, nested);
+      xBlock(ws, row, 1, 1, rich(nested ? `↳ ${item.name}` : item.name, subtitle), {
         fill: C.card,
         align: { vertical: "middle", wrapText: true, indent: 1 },
         border: { bottom: edge, left: xEdge(meta.dot, "thick") },
@@ -897,7 +911,7 @@ function excelDetail(book: ExcelJS.Workbook, view: View, weeks: Bucket[], mode: 
       row += 1;
     }
 
-    const weekTotals = labels.map((_, index) => rows.reduce((sum, item) => sum + (item.weeks[index] ?? 0), 0));
+    const weekTotals = labels.map((_, index) => shown.reduce((sum, item) => sum + (item.row.weeks[index] ?? 0), 0));
     xBlock(ws, row, 1, 2, `Total ${person.name}`, {
       fill: C.sheetHead,
       font: xFont({ bold: true }),
@@ -1215,7 +1229,8 @@ function wPersonBlocks(view: View, weeks: Bucket[], mode: Mode) {
   const numPadX = compact ? 15 : 50;
   const blocks: (Paragraph | Table)[] = [];
   for (const { person, rows } of view.byPerson) {
-    const total = rows.reduce((sum, item) => sum + item.total, 0);
+    const shown = rowsToShow(rows);
+    const total = shown.reduce((sum, item) => sum + item.row.total, 0);
     const pill = 2200;
     blocks.push(
       wTable(
@@ -1260,15 +1275,15 @@ function wPersonBlocks(view: View, weeks: Bucket[], mode: Mode) {
         ),
       ),
     });
-    const itemRows = rows.map((item) => {
-      const meta = TIPO_META[item.tipo];
-      const subtitle = rowSubtitle(item);
+    const itemRows = shown.map(({ row: item, nested }) => {
+      const meta = TIPO_META[allocationTipo(item)];
+      const subtitle = rowSubtitle(item, nested);
       const values = series(item.weeks, mode);
       return new TableRow({
         children: [
           wCell(
             [
-              wPara([wRun(item.name, { bold: true, size: 16 })]),
+              wPara([wRun(nested ? `↳ ${item.name}` : item.name, { bold: true, size: 16 })]),
               ...(subtitle ? [wPara([wRun(subtitle, { size: 14, color: C.soft })])] : []),
             ],
             widths[0] ?? 4000,
@@ -1300,7 +1315,7 @@ function wPersonBlocks(view: View, weeks: Bucket[], mode: Mode) {
       });
     });
     const weekTotals = series(
-      labels.map((_, index) => rows.reduce((sum, item) => sum + (item.weeks[index] ?? 0), 0)),
+      labels.map((_, index) => shown.reduce((sum, item) => sum + (item.row.weeks[index] ?? 0), 0)),
       mode,
     );
     const totalRow = new TableRow({

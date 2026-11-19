@@ -293,6 +293,15 @@ export const get = query({
   },
 });
 
+function countsInTeam(
+  users: { _id: Id<"users">; role?: "admin" | "member" | "viewer" }[],
+  person: { _id: Id<"users">; executed: number; discountHours: number; absenceDetails: unknown[] },
+) {
+  const user = users.find((item) => item._id === person._id);
+  if (user?.role !== "viewer") return true;
+  return person.executed > 0 || person.discountHours > 0 || person.absenceDetails.length > 0;
+}
+
 async function buildTeamMonth(ctx: QueryCtx, year: number, month: number) {
     assertPeriod(year, month);
     const data = await monthContext(ctx, year, month);
@@ -345,6 +354,7 @@ async function buildTeamMonth(ctx: QueryCtx, year: number, month: number) {
           weeks: weekHours.map(round2),
         };
       })
+      .filter((person) => countsInTeam(data.users, person))
       .sort((a, b) => a.name.localeCompare(b.name, "es"));
 
     const visibleItems = data.items.filter((item) => !closedBeforeMonth(item.endedOn, item.year, item.month));
@@ -622,6 +632,7 @@ async function buildTeamRange(ctx: QueryCtx, start: string, end: string, group: 
         weeks: bucketHours.map(round2),
       };
     })
+    .filter((person) => countsInTeam(users, person))
     .sort((a, b) => a.name.localeCompare(b.name, "es"));
 
   const ticketNames = ticketNameMap(visibleItems);

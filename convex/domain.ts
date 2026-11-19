@@ -112,7 +112,61 @@ export function normalizeUrgency(value: string | null | undefined): Urgency | nu
 }
 
 export function canClose(tipo: Tipo) {
-  return tipo === "problema" || tipo === "requerimiento" || tipo === "bandeja";
+  return tipo === "problema" || tipo === "requerimiento" || tipo === "bandeja" || tipo === "documentacion";
+}
+
+export function allocationTipo(item: { tipo: Tipo; relatedKind?: RelatedKind | null }): Tipo {
+  if (item.tipo !== "despliegue") return item.tipo;
+  if (item.relatedKind === "requerimiento") return "requerimiento";
+  if (item.relatedKind === "problema") return "problema";
+  if (item.relatedKind === "service" || item.relatedKind === "incidente") return "bandeja";
+  return "despliegue";
+}
+
+function ticketKey(ticket: string | null | undefined) {
+  const clean = ticket?.trim().toUpperCase();
+  return clean || null;
+}
+
+export function nestWithParent<
+  T extends { tipo: Tipo; ticket?: string | null; relatedTicket?: string | null },
+>(rows: T[]) {
+  const used = new Set<T>();
+  const childrenOf = new Map<T, T[]>();
+  for (const row of rows) {
+    if (row.tipo !== "despliegue") continue;
+    const ticket = ticketKey(row.relatedTicket);
+    if (!ticket) continue;
+    const parent = rows.find(
+      (other) => other !== row && other.tipo !== "despliegue" && ticketKey(other.ticket) === ticket,
+    );
+    if (!parent) continue;
+    const list = childrenOf.get(parent) ?? [];
+    list.push(row);
+    childrenOf.set(parent, list);
+    used.add(row);
+  }
+  const nested: { row: T; nested: boolean }[] = [];
+  for (const row of rows) {
+    if (used.has(row)) continue;
+    nested.push({ row, nested: false });
+    for (const child of childrenOf.get(row) ?? []) nested.push({ row: child, nested: true });
+  }
+  return nested;
+}
+
+export function rowsToShow<
+  T extends { tipo: Tipo; ticket?: string | null; relatedTicket?: string | null; total: number },
+>(rows: T[]) {
+  const nested = nestWithParent(rows);
+  return nested.filter(({ row }) => {
+    if (row.total > 0) return true;
+    const parentTicket = ticketKey(row.ticket);
+    if (!parentTicket || row.tipo === "despliegue") return false;
+    return nested.some(
+      (other) => other.nested && other.row.total > 0 && ticketKey(other.row.relatedTicket) === parentTicket,
+    );
+  });
 }
 
 export function closedBeforeMonth(endedOn: string | null | undefined, year: number, month: number) {
